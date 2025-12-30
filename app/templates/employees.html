@@ -1,0 +1,476 @@
+{% extends "base.html" %}
+{% block title %}Employees - Staffing Admin{% endblock %}
+{% block header %}Employees{% endblock %}
+{% block subheader %}Manage internal employees{% endblock %}
+{% block content %}
+<div class="space-y-8">
+  <div class="bg-white border border-slate-200 rounded-lg">
+    <div class="flex flex-wrap items-center justify-between gap-4 px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-800">Employee List</h2>
+        <p class="text-sm text-slate-500">HR master data with resource status snapshot.</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <!-- Add Employee = just loads empty form -->
+        <a href="/employees"
+           class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700">
+          Add Employee
+        </a>
+        <a href="/employees/export" class="px-4 py-2 text-sm font-medium rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">
+          Export
+        </a>
+      </div>
+    </div>
+
+    <div class="p-6">
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200">
+          <thead class="bg-slate-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Employee Name</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Department</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Title</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Years of Experience</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody class="bg-white divide-y divide-slate-200">
+            {% if employees %}
+              {% for e in employees %}
+              <tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{{ e.full_name }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">{{ e.department_name }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                  {% if e.title is defined and e.title %}
+                    {{ e.title }}
+                  {% else %}
+                    N/A
+                  {% endif %}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                  {% if e.years_experience is defined and e.years_experience is not none %}
+                    {{ e.years_experience }}
+                  {% else %}
+                    N/A
+                  {% endif %}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                    {% if e.resource_status == 'Active' %}bg-emerald-100 text-emerald-800{% else %}bg-slate-100 text-slate-600{% endif %}">
+                    {{ e.resource_status if e.resource_status else "Unknown" }}
+                  </span>
+                </td>
+
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                  <div class="flex flex-wrap gap-2">
+
+                    <!-- View: for now same as Edit (loads the record into the form) -->
+                    <a href="/employees?employee_id={{ e.employee_id }}&mode=view"
+                       class="px-3 py-1 rounded-md border border-slate-300 hover:bg-slate-50">
+                      View
+                    </a>
+
+                    <!-- Edit: loads employee data into the form -->
+                    <a href="/employees?employee_id={{ e.employee_id }}"
+                       class="px-3 py-1 rounded-md border border-slate-300 hover:bg-slate-50">
+                      Edit
+                    </a>
+
+                    <!-- Deactivate: soft status change on Resource only -->
+                    <form method="post" action="/employees/deactivate" class="inline">
+                      <input type="hidden" name="employee_id" value="{{ e.employee_id }}">
+                      <button type="submit"
+                              class="px-3 py-1 rounded-md border border-rose-200 text-rose-700 hover:bg-rose-50"
+                              {% if e.resource_status != 'Active' %}disabled{% endif %}>
+                        Deactivate
+                      </button>
+                    </form>
+
+                    <!-- Delete: hard delete with assignment check -->
+                    <form method="post" action="/employees/delete" class="inline" onsubmit="return confirm('Delete this employee? This cannot be undone.');">
+                      <input type="hidden" name="employee_id" value="{{ e.employee_id }}">
+                      <button type="submit"
+                              class="px-3 py-1 rounded-md border border-rose-300 text-rose-800 hover:bg-rose-50">
+                        Delete
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="6" class="px-6 py-6 text-sm text-slate-500">No employees loaded yet.</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-3">
+    <!-- NOTE: For STEP 1, we keep the form as-is (no redesign yet) -->
+    <form class="lg:col-span-2 space-y-6" method="post" action="/employees">
+      <input type="hidden" name="employee_id" value="{{ employee.employee_id if employee }}">
+      <input type="hidden" name="resource_id" value="{{ employee.resource_id if employee }}">
+      <input type="hidden" name="resource_type" value="Employee">
+
+      {% if view_mode %}
+      <div class="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2 rounded-md text-sm">
+        Read-only view. Use Edit to make changes.
+      </div>
+      {% endif %}
+      {% if error %}
+      <div class="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-2 rounded-md text-sm">
+        {{ error }}
+      </div>
+      {% endif %}
+
+      <fieldset class="space-y-6" {% if view_mode %}disabled{% endif %}>
+      <div class="bg-white border border-slate-200 rounded-lg">
+        <div class="px-6 py-4 border-b border-slate-200">
+          <h3 class="text-base font-semibold text-slate-800">Section A - Personal and HR Information</h3>
+          <p class="text-sm text-slate-500">Employee table fields only.</p>
+        </div>
+        <div class="p-6 grid gap-4 md:grid-cols-2">
+          <div>
+            <label class="block text-sm font-medium text-slate-700">First Name</label>
+            <input type="text" name="first_name" required value="{{ employee.first_name if employee }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <p class="text-xs text-rose-600 mt-1">Required.</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Last Name</label>
+            <input type="text" name="last_name" required value="{{ employee.last_name if employee }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <p class="text-xs text-rose-600 mt-1">Required.</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Email</label>
+            <input type="email" name="email" required value="{{ employee.email if employee }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <p class="text-xs text-rose-600 mt-1">Required and must be unique.</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Phone</label>
+            <input type="tel" name="phone" value="{{ employee.phone if employee }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Department</label>
+            <select name="department_id" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Select department</option>
+              {% for department in departments %}
+              <option value="{{ department[0] }}" {% if employee and employee.department_id == department[0] %}selected{% endif %}>{{ department[1] }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Title</label>
+            <input type="text" name="title" value="{{ employee.title if employee }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Residence Country</label>
+            <select name="residence_country_id" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Select country</option>
+              {% for country in countries %}
+              <option value="{{ country.country_id if country.country_id is defined else country[0] }}"
+                {% if employee and employee.residence_country_id == (country.country_id if country.country_id is defined else country[0]) %}
+                  selected
+                {% elif not employee and (country.name if country.name is defined else country[1]) == 'Jordan' %}
+                  selected
+                {% endif %}>
+                {{ country.name if country.name is defined else country[1] }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Years of Experience</label>
+            <input type="number" name="years_experience" min="0" value="{{ employee.years_experience if employee }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Hire Date</label>
+            <input type="date" name="hire_date" value="{{ employee.hire_date if employee }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Birth Date</label>
+            <input type="date" name="birth_date" value="{{ employee.birth_date if employee }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-lg">
+        <div class="px-6 py-4 border-b border-slate-200">
+          <h3 class="text-base font-semibold text-slate-800">Section B - Resource Profile</h3>
+          <p class="text-sm text-slate-500">Resource table fields only (one resource per employee).</p>
+        </div>
+        <div class="p-6 grid gap-4 md:grid-cols-2">
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Status</label>
+            <select name="resource_status" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option {% if employee and employee.resource_status == "Active" %}selected{% endif %}>Active</option>
+              <option {% if employee and employee.resource_status == "Inactive" %}selected{% endif %}>Inactive</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2 mt-6">
+            <input type="checkbox" name="is_willing_to_travel" class="h-4 w-4 text-blue-600 border-slate-300 rounded" {% if employee and employee.is_willing_to_travel %}checked{% endif %}>
+            <label class="text-sm text-slate-700">Willing to Travel</label>
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-slate-700">Bio Text</label>
+            <textarea name="bio_text" rows="3" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">{{ employee.bio_text if employee }}</textarea>
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-slate-700">CV Text</label>
+            <textarea name="cv_text" rows="4" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">{{ employee.cv_text if employee }}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-lg">
+        <div class="px-6 py-4 border-b border-slate-200">
+          <h3 class="text-base font-semibold text-slate-800">Certifications</h3>
+          <p class="text-sm text-slate-500">Linked via Resource -> ResourceCertification -> Certification.</p>
+        </div>
+        <div class="p-6 grid gap-6 lg:grid-cols-2">
+          <div class="border border-slate-200 rounded-md p-4 space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-slate-700">Certification</label>
+              <input list="certification-options" name="add_certification_name" placeholder="Search certification" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <datalist id="certification-options">
+                {% for certification in certifications %}
+                <option value="{{ certification.name if certification.name is defined else certification[1] }}"></option>
+                {% endfor %}
+              </datalist>
+            </div>
+            <div class="grid gap-3 md:grid-cols-2">
+              <div>
+                <label class="block text-sm font-medium text-slate-700">Obtained Date</label>
+                <input type="date" name="add_certification_obtained_date" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700">Expiry Date</label>
+                <input type="date" name="add_certification_expiry_date" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-slate-700">Issuing Body</label>
+              <input type="text" name="add_certification_issuing_body" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <button type="submit" class="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700">&raquo; Add</button>
+            </div>
+          </div>
+
+          <div class="border border-slate-200 rounded-md p-4">
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-slate-200">
+                <thead class="bg-slate-50">
+                  <tr>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Certification Name</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Obtained Date</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Expiry Date</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Issuing Body</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+
+                <tbody class="bg-white divide-y divide-slate-200">
+                  {% if employee_certifications %}
+                    {% for cert in employee_certifications %}
+                    <tr>
+                      <td class="px-4 py-2 text-sm text-slate-700">
+                        {{ cert[1] }}
+                        <input type="hidden" name="certification_id[]" value="{{ cert[0] }}">
+                      </td>
+                      <td class="px-4 py-2">
+                        <input type="date" name="certification_obtained_date[]" value="{{ cert[2] }}" class="w-full px-2 py-1 border border-slate-300 rounded-md text-sm">
+                      </td>
+                      <td class="px-4 py-2">
+                        <input type="date" name="certification_expiry_date[]" value="{{ cert[3] }}" class="w-full px-2 py-1 border border-slate-300 rounded-md text-sm">
+                      </td>
+                      <td class="px-4 py-2">
+                        <input type="text" name="certification_issuing_body[]" value="{{ cert[4] }}" class="w-full px-2 py-1 border border-slate-300 rounded-md text-sm">
+                      </td>
+                      <td class="px-4 py-2">
+                        <button type="button" class="text-sm text-rose-600 hover:text-rose-700">Remove</button>
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr>
+                      <td colspan="5" class="px-4 py-3 text-sm text-slate-500">
+                        No certifications linked.
+                      </td>
+                    </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-lg">
+        <div class="px-6 py-4 border-b border-slate-200">
+          <h3 class="text-base font-semibold text-slate-800">Languages</h3>
+          <p class="text-sm text-slate-500">Linked via Resource -> ResourceLanguage -> Language.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <datalist id="language-options">
+            {% for language in languages %}
+            <option value="{{ language.name if language.name is defined else language[1] }}" data-id="{{ language.language_id if language.language_id is defined else language[0] }}"></option>
+            {% endfor %}
+          </datalist>
+
+          <div class="overflow-x-auto" id="language-rows">
+            {% set existing_count = employee_languages|length %}
+            {% for i in range(10) %}
+              {% set row_lang = employee_languages[i] if i < existing_count else None %}
+              <div class="grid gap-3 md:grid-cols-6 items-end py-2 {% if i > 0 and i >= existing_count %}hidden{% endif %}" data-language-row>
+                <div class="md:col-span-3">
+                  <label class="block text-sm font-medium text-slate-700">Language</label>
+                  <input type="text"
+                         list="language-options"
+                         class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                         value="{{ row_lang[1] if row_lang }}"
+                         data-language-input>
+                  <input type="hidden" name="language_id[]" value="{{ row_lang[0] if row_lang }}" data-language-id {% if not row_lang %}disabled{% endif %}>
+                </div>
+                <div class="md:col-span-2">
+                  <label class="block text-sm font-medium text-slate-700">Proficiency</label>
+                  <select name="language_proficiency[]" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm" data-language-proficiency {% if not row_lang %}disabled{% endif %}>
+                    {% for level in ['Basic', 'Intermediate', 'Fluent', 'Native'] %}
+                    <option value="{{ level }}" {% if row_lang and row_lang[2] == level %}selected{% endif %}>{{ level }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="md:col-span-1">
+                  <button type="button" class="text-sm text-rose-600 hover:text-rose-700 {% if i == 0 %}invisible{% endif %}" data-language-remove>Remove</button>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          const rowsContainer = document.getElementById("language-rows");
+          if (!rowsContainer) return;
+
+          const rows = Array.from(rowsContainer.querySelectorAll("[data-language-row]"));
+          const options = Array.from(document.querySelectorAll("#language-options option"));
+          const nameToId = new Map(options.map((opt) => [opt.value, opt.getAttribute("data-id")]));
+
+          const updateVisibility = () => {
+            rows.forEach((row, index) => {
+              if (index === 0) {
+                row.classList.remove("hidden");
+                return;
+              }
+              const prev = rows[index - 1];
+              const prevId = prev.querySelector("[data-language-id]").value;
+              if (prevId) {
+                row.classList.remove("hidden");
+              } else {
+                row.classList.add("hidden");
+                const input = row.querySelector("[data-language-input]");
+                const idInput = row.querySelector("[data-language-id]");
+                const proficiency = row.querySelector("[data-language-proficiency]");
+                input.value = "";
+                idInput.value = "";
+                idInput.disabled = true;
+                if (proficiency) {
+                  proficiency.selectedIndex = 0;
+                  proficiency.disabled = true;
+                }
+              }
+            });
+
+            rows.forEach((row) => {
+              const idInput = row.querySelector("[data-language-id]");
+              const proficiency = row.querySelector("[data-language-proficiency]");
+              const hasValue = Boolean(idInput.value);
+              idInput.disabled = !hasValue;
+              if (proficiency) {
+                proficiency.disabled = !hasValue;
+              }
+            });
+          };
+
+          rows.forEach((row) => {
+            const input = row.querySelector("[data-language-input]");
+            const idInput = row.querySelector("[data-language-id]");
+            const removeBtn = row.querySelector("[data-language-remove]");
+
+            input.addEventListener("change", () => {
+              const matchId = nameToId.get(input.value) || "";
+              idInput.value = matchId;
+              idInput.disabled = !matchId;
+              const proficiency = row.querySelector("[data-language-proficiency]");
+              if (proficiency) {
+                proficiency.disabled = !matchId;
+              }
+              updateVisibility();
+            });
+
+            removeBtn.addEventListener("click", () => {
+              input.value = "";
+              idInput.value = "";
+              idInput.disabled = true;
+              const proficiency = row.querySelector("[data-language-proficiency]");
+              if (proficiency) {
+                proficiency.selectedIndex = 0;
+                proficiency.disabled = true;
+              }
+              updateVisibility();
+            });
+          });
+
+          updateVisibility();
+        })();
+      </script>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <button type="submit" class="px-5 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700" {% if view_mode %}disabled{% endif %}>Save Employee</button>
+        <button type="button" class="px-5 py-2 text-sm font-medium rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">Cancel</button>
+        <p class="text-xs text-slate-500">Saving creates or updates both Employee and Resource records.</p>
+      </div>
+      </fieldset>
+    </form>
+
+    <div class="space-y-6">
+      <div class="bg-white border border-slate-200 rounded-lg p-5">
+        <h4 class="text-sm font-semibold text-slate-800 mb-2">Data Flow Logic</h4>
+        <ul class="text-sm text-slate-600 space-y-1">
+          <li>Employee fields save to Employee table.</li>
+          <li>Profile fields save to Resource table with resource_type = Employee.</li>
+          <li>Certifications save to ResourceCertification with dates.</li>
+          <li>Languages save to ResourceLanguage with proficiency.</li>
+        </ul>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-lg p-5">
+        <h4 class="text-sm font-semibold text-slate-800 mb-2">Validation Rules</h4>
+        <ul class="text-sm text-slate-600 space-y-1">
+          <li>First name, last name, and email are required.</li>
+          <li>Email must be unique per employee.</li>
+          <li>Status must be Active or Inactive.</li>
+          <li>Certification expiry date is optional.</li>
+        </ul>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-lg p-5">
+        <h4 class="text-sm font-semibold text-slate-800 mb-2">Integrity Rules</h4>
+        <ul class="text-sm text-slate-600 space-y-1">
+          <li>Each employee has exactly one Resource row.</li>
+          <li>Editing never duplicates Resource.</li>
+          <li>Inline create reuses existing matches by name.</li>
+          <li>Deactivate performs soft status change only.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

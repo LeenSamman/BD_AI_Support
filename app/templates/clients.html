@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Clients - Staffing Admin{% endblock %}
+{% block header %}Clients{% endblock %}
+{% block subheader %}Manage client profiles{% endblock %}
+{% block content %}
+<div class="space-y-8">
+  <div class="bg-white border border-slate-200 rounded-lg">
+    <div class="flex flex-wrap items-center justify-between gap-4 px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-800">Client List</h2>
+        <p class="text-sm text-slate-500">Clients with primary sector assignment.</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <a href="/clients"
+           class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700">
+          Add Client
+        </a>
+        <a href="/clients/export" class="px-4 py-2 text-sm font-medium rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">
+          Export
+        </a>
+      </div>
+    </div>
+
+    <div class="p-6">
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200">
+          <thead class="bg-slate-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Client Name</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Sector</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Country</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody class="bg-white divide-y divide-slate-200">
+            {% if clients %}
+              {% for c in clients %}
+              <tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{{ c.name }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">{{ c.sector_name or "Not assigned" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">Not available</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                  <div class="flex flex-wrap gap-2">
+                    <a href="/clients?client_id={{ c.client_id }}&mode=view"
+                       class="px-3 py-1 rounded-md border border-slate-300 hover:bg-slate-50">
+                      View
+                    </a>
+                    <a href="/clients?client_id={{ c.client_id }}"
+                       class="px-3 py-1 rounded-md border border-slate-300 hover:bg-slate-50">
+                      Edit
+                    </a>
+                    <form method="post" action="/clients/delete" class="inline" onsubmit="return confirm('Delete this client? This cannot be undone.');">
+                      <input type="hidden" name="client_id" value="{{ c.client_id }}">
+                      <button type="submit" class="px-3 py-1 rounded-md border border-rose-300 text-rose-800 hover:bg-rose-50">
+                        Delete
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="4" class="px-6 py-6 text-sm text-slate-500">No clients loaded yet.</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {% set ns = namespace(editing=None) %}
+  {% if client_id and clients %}
+    {% for c in clients %}
+      {% if c.client_id == client_id %}
+        {% set ns.editing = c %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+
+  <form class="space-y-6" method="post" action="/clients">
+    <input type="hidden" name="client_id" value="{{ ns.editing.client_id if ns.editing }}">
+
+  {% if view_mode %}
+  <div class="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2 rounded-md text-sm">
+    Read-only view. Use Edit to make changes.
+  </div>
+  {% endif %}
+  {% if error %}
+  <div class="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-2 rounded-md text-sm">
+    {{ error }}
+  </div>
+  {% endif %}
+
+    <fieldset class="space-y-6" {% if view_mode %}disabled{% endif %}>
+    <div class="bg-white border border-slate-200 rounded-lg">
+      <div class="px-6 py-4 border-b border-slate-200">
+        <h3 class="text-base font-semibold text-slate-800">Section A - Client Information</h3>
+        <p class="text-sm text-slate-500">Client table fields only.</p>
+      </div>
+      <div class="p-6 grid gap-4 md:grid-cols-2">
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Client Name</label>
+          <input type="text" name="name" required value="{{ ns.editing.name if ns.editing }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <p class="text-xs text-rose-600 mt-1">Required.</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Contact Email</label>
+          <input type="email" name="contact_email" value="{{ ns.editing.contact_email if ns.editing }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Contact Phone</label>
+          <input type="tel" name="contact_phone" value="{{ ns.editing.contact_phone if ns.editing }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white border border-slate-200 rounded-lg">
+      <div class="px-6 py-4 border-b border-slate-200">
+        <h3 class="text-base font-semibold text-slate-800">Section B - Sector</h3>
+        <p class="text-sm text-slate-500">Single primary sector for the client.</p>
+      </div>
+      <div class="p-6 grid gap-4 md:grid-cols-2">
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Sector</label>
+          <input type="text"
+                 list="sector-options"
+                 class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                 value="{{ ns.editing.sector_name if ns.editing }}"
+                 data-sector-input>
+          <input type="hidden" name="sector_id" value="{{ ns.editing.sector_id if ns.editing }}" data-sector-id>
+          <datalist id="sector-options">
+            {% for sector in sectors %}
+            <option value="{{ sector.name if sector.name is defined else sector[1] }}" data-id="{{ sector.sector_id if sector.sector_id is defined else sector[0] }}"></option>
+            {% endfor %}
+          </datalist>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <button type="submit" class="px-5 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700" {% if view_mode %}disabled{% endif %}>Save Client</button>
+      <button type="button" class="px-5 py-2 text-sm font-medium rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">Cancel</button>
+    </div>
+    </fieldset>
+  </form>
+</div>
+
+<script>
+  (function () {
+    const input = document.querySelector("[data-sector-input]");
+    const idInput = document.querySelector("[data-sector-id]");
+    if (!input || !idInput) return;
+
+    const options = Array.from(document.querySelectorAll("#sector-options option"));
+    const nameToId = new Map(options.map((opt) => [opt.value, opt.getAttribute("data-id")]));
+
+    const updateId = () => {
+      const matchId = nameToId.get(input.value) || "";
+      idInput.value = matchId;
+    };
+
+    input.addEventListener("change", updateId);
+    input.addEventListener("blur", updateId);
+  })();
+</script>
+{% endblock %}

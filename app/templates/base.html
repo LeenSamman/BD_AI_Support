@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Staffing Admin{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div class="min-h-screen flex">
+    <aside class="w-64 bg-white border-r border-slate-200">
+      <div class="px-6 py-4 border-b border-slate-200">
+        <div class="text-lg font-semibold text-slate-800">Staffing Admin</div>
+        <p class="text-sm text-slate-500">Internal tool</p>
+      </div>
+      <nav class="px-4 py-4 space-y-6">
+        <div>
+          <a href="/" class="flex items-center px-3 py-2 rounded-md text-sm font-medium {{ 'bg-slate-100 text-slate-900' if active == 'dashboard' else 'text-slate-600 hover:bg-slate-50' }}">Dashboard</a>
+          <a href="/rfp" class="flex items-center px-3 py-2 rounded-md text-sm font-medium {{ 'bg-slate-100 text-slate-900' if active == 'rfp' else 'text-slate-600 hover:bg-slate-50' }}">RFP Workspace</a>
+        </div>
+        <div>
+          <p class="px-3 text-xs uppercase tracking-wide text-slate-400 mb-1">Human Resources</p>
+          <div class="space-y-1">
+            <a href="/employees" class="block px-3 py-2 rounded-md text-sm font-medium {{ 'bg-slate-100 text-slate-900' if active == 'employees' else 'text-slate-600 hover:bg-slate-50' }}">Employees</a>
+            <a href="/subcontractors" class="block px-3 py-2 rounded-md text-sm font-medium {{ 'bg-slate-100 text-slate-900' if active == 'subcontractors' else 'text-slate-600 hover:bg-slate-50' }}">Subcontractors</a>
+          </div>
+        </div>
+        <div>
+          <p class="px-3 text-xs uppercase tracking-wide text-slate-400 mb-1">Business Core</p>
+          <div class="space-y-1">
+            <a href="/projects" class="block px-3 py-2 rounded-md text-sm font-medium {{ 'bg-slate-100 text-slate-900' if active == 'projects' else 'text-slate-600 hover:bg-slate-50' }}">Projects</a>
+            <a href="/clients" class="block px-3 py-2 rounded-md text-sm font-medium {{ 'bg-slate-100 text-slate-900' if active == 'clients' else 'text-slate-600 hover:bg-slate-50' }}">Clients</a>
+            <a href="/assignments" class="block px-3 py-2 rounded-md text-sm font-medium {{ 'bg-slate-100 text-slate-900' if active == 'assignments' else 'text-slate-600 hover:bg-slate-50' }}">Assignments</a>
+          </div>
+        </div>
+        <div>
+          <p class="px-3 text-xs uppercase tracking-wide text-slate-400 mb-1">System &amp; Data</p>
+          <div class="space-y-1">
+            <a href="/reference-data" class="block px-3 py-2 rounded-md text-sm font-medium {{ 'bg-slate-100 text-slate-900' if active == 'reference' else 'text-slate-600 hover:bg-slate-50' }}">Reference Data</a>
+          </div>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="flex-1">
+      <header class="px-8 py-6 border-b border-slate-200 bg-white">
+        <h1 class="text-2xl font-semibold text-slate-800">{% block header %}{% endblock %}</h1>
+        <p class="text-sm text-slate-500">{% block subheader %}{% endblock %}</p>
+      </header>
+      <section class="p-8">
+        {% block content %}{% endblock %}
+      </section>
+    </main>
+  </div>
+</body>
+</html>

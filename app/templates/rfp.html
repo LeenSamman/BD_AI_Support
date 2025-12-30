@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+
+{% block title %}RFP Analyzer{% endblock %}
+{% block header %}RFP Analyzer{% endblock %}
+{% block subheader %}Upload an RFP and generate structured insights{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error }}</div>
+{% endif %}
+
+<style>
+  /* Makes PDF viewer scale correctly */
+  #rfp-pdf-embed {
+    width: 95% !important;
+    height: 95% !important;
+    display: block;
+    border-radius: 8px;
+  }
+  .panel {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.06);
+    padding: 1rem;
+  }
+</style>
+
+<!-- ==================  TOP SECTION: FILE + PREVIEW  ================== -->
+<div class="flex gap-6 w-full items-stretch max-h-[80vh]">
+
+  <!-- ================== LEFT SIDE: UPLOAD PANEL ================== -->
+  <div class="flex flex-col flex-1 max-h-[80vh] overflow-y-auto">
+
+    <form method="post" action="/rfp/upload" enctype="multipart/form-data" class="flex flex-col gap-4 h-full panel">
+
+      <div>
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-lg font-semibold text-slate-800">Upload RFP</h2>
+          <span class="text-xs text-slate-500">PDF / DOC / DOCX</span>
+        </div>
+
+        <label for="rfp-file-input"
+               class="block border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer
+                      hover:border-slate-400 transition">
+          <input id="rfp-file-input" name="file" type="file" accept=".pdf,.doc,.docx" class="hidden" />
+
+          <p class="text-sm text-slate-600">Drag &amp; drop or click to upload</p>
+          <p class="text-xs text-slate-500 mt-1">Accepted: PDF, Word (.doc, .docx)</p>
+
+          <div class="mt-3 text-sm">
+            Selected:
+            <span id="rfp-file-name" class="font-semibold">{{ file_name or 'None' }}</span>
+            <span id="rfp-file-badge-inline"
+                  class="ml-2 px-2 py-0.5 rounded-full bg-slate-100 text-xs font-semibold text-slate-700{% if not file_ext %} hidden{% endif %}">
+              {{ file_ext|upper if file_ext }}
+            </span>
+          </div>
+
+          <p id="rfp-preview-note-inline"
+             class="text-xs text-slate-500 mt-1{% if not preview_note %} hidden{% endif %}">
+            {{ preview_note or '' }}
+          </p>
+        </label>
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold text-slate-800">Or paste RFP text</label>
+        <textarea name="rfp_text" placeholder="Paste text here..."
+                  class="mt-2 w-full h-32 p-3 border rounded-lg text-sm"></textarea>
+      </div>
+
+      <button id="rfp-analyze-btn" type="submit"
+              class="w-full bg-blue-600 text-white font-medium py-3 rounded-lg text-center hover:bg-blue-700 mt-auto">
+        Analyze
+      </button>
+    </form>
+  </div>
+
+  <!-- ================== RIGHT SIDE: PREVIEW PANEL ================== -->
+  <div class="flex flex-col flex-1 panel max-h-[80vh] overflow-y-auto">
+
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-lg font-semibold text-slate-800">Document Preview</h2>
+      <span id="rfp-file-badge"
+            class="text-xs font-semibold px-2 py-1 bg-slate-100 rounded-full text-slate-700{% if not file_ext %} hidden{% endif %}">
+        {{ file_ext|upper if file_ext }}
+      </span>
+    </div>
+
+    <div id="rfp-preview-error" class="hidden mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"></div>
+
+    <!-- Placeholder -->
+    <div id="rfp-preview-placeholder"
+         class="flex items-center justify-center w-full text-slate-500 text-sm{% if preview_url %} hidden{% endif %} border rounded-lg h-full">
+      Select a file to preview.
+    </div>
+
+    <!-- PDF Preview -->
+    <div id="rfp-preview-pdf" class="flex-1 w-full h-full{% if not preview_url %} hidden{% endif %}">
+      <iframe id="rfp-pdf-embed" src="{{ preview_url }}" class="w-full h-full"></iframe>
+      <p id="rfp-preview-note" class="text-xs text-slate-500 mt-2">{{ preview_note or '' }}</p>
+    </div>
+
+    <div id="rfp-preview-word" class="hidden mt-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <div id="rfp-word-filename" class="text-sm font-medium text-slate-800"></div>
+          <div class="mt-1 text-xs text-slate-500">Preview not available for Word files. You can still analyze it.</div>
+        </div>
+        <span id="rfp-word-badge" class="text-xs font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-700"></span>
+      </div>
+      <div class="mt-4">
+        <a id="rfp-word-link" href="{{ file_url or '#' }}" class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-md bg-slate-900 text-white hover:bg-slate-800">
+          Download / Open File
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="rfp-loading-overlay" class="hidden fixed inset-0 bg-white/80 items-center justify-center z-50">
+  <div class="flex flex-col items-center gap-3">
+    <div class="w-10 h-10 border-4 border-slate-200 border-t-slate-700 rounded-full animate-spin"></div>
+    <div class="text-sm text-slate-600">Analyzing document...</div>
+  </div>
+</div>
+
+<!-- ==================  EXTRACTED TEXT ================== -->
+<div id="rfp-extracted-panel" class="mt-6 panel">
+
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-lg font-semibold text-slate-800">Extracted Text</h2>
+    {% if extracted_text_truncated %}
+      <span class="text-xs text-slate-500">Showing first 50k chars</span>
+    {% endif %}
+  </div>
+
+  {% if extracted_text %}
+    <div class="max-h-[240px] overflow-y-auto">
+      <pre class="text-xs font-mono whitespace-pre-wrap">{{ extracted_text }}</pre>
+    </div>
+  {% else %}
+    <p class="text-sm text-slate-500">Waiting for document...</p>
+  {% endif %}
+
+</div>
+
+<!-- ==================  EXTRACTION ================== -->
+<div id="rfp-results-panel" class="mt-8 panel">
+
+  <h2 class="text-lg font-semibold text-slate-800 mb-4">Extraction Results</h2>
+
+  {% if not result %}
+    <p class="text-sm text-slate-500">Waiting for document...</p>
+  {% else %}
+    <div class="space-y-6 text-sm text-slate-800 max-h-[750px] overflow-y-auto">
+
+      {% macro section(title, value) %}
+      <div>
+        <h3 class="font-bold mb-1">{{ title }}</h3>
+        {% if value %}<p>{{ value }}</p>
+        {% else %}<p class="italic text-slate-500">None</p>
+        {% endif %}
+      </div>
+      {% endmacro %}
+
+      {{ section("Summary", result.summary) }}
+      {{ section("Company Requirements", result.company_requirements) }}
+      {{ section("Team Requirements", result.team_requirements) }}
+      {{ section("Technical Requirements", result.technical_requirements) }}
+      {{ section("Financial/Commercial Requirements", result.financial_requirements) }}
+      {{ section("Submission Requirements", result.submission_requirements) }}
+      {{ section("Deliverables & Timeline", result.deliverables_timeline) }}
+      {{ section("Evaluation Criteria", result.evaluation_criteria) }}
+      {{ section("Risks / Red Flags", result.risks) }}
+      {{ section("Questions for Client", result.questions_for_client) }}
+      {{ section("Missing Information", result.missing_information) }}
+    </div>
+  {% endif %}
+
+</div>
+<script>
+  const fileInput = document.getElementById("rfp-file-input");
+  const fileName = document.getElementById("rfp-file-name");
+  const inlineBadge = document.getElementById("rfp-file-badge-inline");
+  const inlinePreviewNote = document.getElementById("rfp-preview-note-inline");
+  const previewPdf = document.getElementById("rfp-preview-pdf");
+  const pdfEmbed = document.getElementById("rfp-pdf-embed");
+  const previewPlaceholder = document.getElementById("rfp-preview-placeholder");
+  const fileBadge = document.getElementById("rfp-file-badge");
+  const previewNote = document.getElementById("rfp-preview-note");
+  const previewError = document.getElementById("rfp-preview-error");
+  const wordCard = document.getElementById("rfp-preview-word");
+  const wordName = document.getElementById("rfp-word-filename");
+  const wordBadge = document.getElementById("rfp-word-badge");
+  const wordLink = document.getElementById("rfp-word-link");
+  const analyzeBtn = document.getElementById("rfp-analyze-btn");
+  const loadingOverlay = document.getElementById("rfp-loading-overlay");
+  const loaderText = document.querySelector("#rfp-loading-overlay .text-sm");
+  const loadingMessages = [
+    "Extracting summary...",
+    "Scanning requirements...",
+    "Identifying team qualifications...",
+    "Extracting deliverables...",
+    "Evaluating criteria...",
+    "Preparing final structure..."
+  ];
+  let loadingInterval = null;
+
+  const resetPreview = () => {
+    previewPdf.classList.add("hidden");
+    pdfEmbed.removeAttribute("src");
+    wordCard.classList.add("hidden");
+    fileBadge.classList.add("hidden");
+    previewNote.classList.add("hidden");
+    inlineBadge.classList.add("hidden");
+    inlinePreviewNote.classList.add("hidden");
+    previewError.classList.add("hidden");
+    previewError.textContent = "";
+    wordName.textContent = "";
+    wordBadge.textContent = "";
+    previewPlaceholder.textContent = "Select a file to preview.";
+    previewPlaceholder.classList.remove("hidden");
+  };
+
+  fileInput.addEventListener("change", (event) => {
+    const file = event.target.files[0];
+    if (!file) {
+      fileName.textContent = "None";
+      resetPreview();
+      return;
+    }
+
+    fileName.textContent = file.name;
+    const extension = file.name.split(".").pop().toLowerCase();
+    resetPreview();
+
+    fileBadge.textContent = extension.toUpperCase();
+    fileBadge.classList.remove("hidden");
+    inlineBadge.textContent = extension.toUpperCase();
+    inlineBadge.classList.remove("hidden");
+
+    if (extension === "pdf") {
+      const objectUrl = URL.createObjectURL(file);
+      pdfEmbed.setAttribute("src", objectUrl);
+      previewPdf.classList.remove("hidden");
+      previewNote.textContent = "Preview: Original PDF";
+      previewNote.classList.remove("hidden");
+      inlinePreviewNote.textContent = "Preview: Original PDF";
+      inlinePreviewNote.classList.remove("hidden");
+      previewPlaceholder.classList.add("hidden");
+      return;
+    }
+
+    if (extension === "doc" || extension === "docx") {
+      previewPlaceholder.textContent = "Converting Word to PDF...";
+      previewPlaceholder.classList.remove("hidden");
+      const formData = new FormData();
+      formData.append("file", file);
+
+      fetch("/rfp/preview", {
+        method: "POST",
+        body: formData
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          if (!data.ok) {
+            throw new Error(data.error || "Preview failed");
+          }
+          pdfEmbed.setAttribute("src", data.preview_url);
+          previewPdf.classList.remove("hidden");
+          previewNote.textContent = data.preview_note || "Preview: Converted to PDF for preview only (original Word file preserved).";
+          previewNote.classList.remove("hidden");
+          inlinePreviewNote.textContent = data.preview_note || "Preview: Converted to PDF for preview only (original Word file preserved).";
+          inlinePreviewNote.classList.remove("hidden");
+          previewPlaceholder.classList.add("hidden");
+        })
+        .catch((error) => {
+          previewError.textContent = error.message;
+          previewError.classList.remove("hidden");
+        });
+      return;
+    }
+
+    previewPlaceholder.textContent = "Unsupported file type.";
+    previewPlaceholder.classList.remove("hidden");
+  });
+
+  const startLoader = () => {
+    loadingOverlay.classList.remove("hidden");
+    loadingOverlay.classList.add("flex");
+    if (!loaderText) {
+      return;
+    }
+    loaderText.innerText = loadingMessages[0];
+    let i = 1;
+    if (loadingInterval) {
+      clearInterval(loadingInterval);
+    }
+    loadingInterval = setInterval(() => {
+      loaderText.innerText = loadingMessages[i % loadingMessages.length];
+      i += 1;
+    }, 3000);
+  };
+
+  const stopLoader = () => {
+    if (loadingInterval) {
+      clearInterval(loadingInterval);
+      loadingInterval = null;
+    }
+    loadingOverlay.classList.add("hidden");
+    loadingOverlay.classList.remove("flex");
+  };
+
+  analyzeBtn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    startLoader();
+
+    try {
+      const form = e.target.closest("form");
+      const formData = new FormData(form);
+      const response = await fetch("/rfp/upload", { method: "POST", body: formData });
+      const html = await response.text();
+      const newDoc = new DOMParser().parseFromString(html, "text/html");
+      const currentExtracted = document.getElementById("rfp-extracted-panel");
+      const newExtracted = newDoc.getElementById("rfp-extracted-panel");
+      if (currentExtracted && newExtracted) {
+        currentExtracted.innerHTML = newExtracted.innerHTML;
+      }
+      const currentResults = document.getElementById("rfp-results-panel");
+      const newResults = newDoc.getElementById("rfp-results-panel");
+      if (currentResults && newResults) {
+        currentResults.innerHTML = newResults.innerHTML;
+      }
+    } finally {
+      stopLoader();
+    }
+  });
+
+  window.addEventListener("beforeunload", () => {
+    if (loadingInterval) {
+      clearInterval(loadingInterval);
+      loadingInterval = null;
+    }
+  });
+</script>
+{% endblock %}

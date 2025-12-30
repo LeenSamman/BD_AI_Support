@@ -1,0 +1,461 @@
+{% extends "base.html" %}
+{% block title %}Subcontractors - Staffing Admin{% endblock %}
+{% block header %}Subcontractors{% endblock %}
+{% block subheader %}Manage external partners{% endblock %}
+{% block content %}
+<div class="space-y-8">
+  <div class="bg-white border border-slate-200 rounded-lg">
+    <div class="flex flex-wrap items-center justify-between gap-4 px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-800">Subcontractor List</h2>
+        <p class="text-sm text-slate-500">External partners with resource status snapshot.</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <a href="/subcontractors"
+           class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700">
+          Add Subcontractor
+        </a>
+        <a href="/subcontractors/export" class="px-4 py-2 text-sm font-medium rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">
+          Export
+        </a>
+      </div>
+    </div>
+
+    <div class="p-6">
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200">
+          <thead class="bg-slate-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Company Name</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Contact Name</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Title</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Years of Experience</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Residence Country</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody class="bg-white divide-y divide-slate-200">
+            {% if subcontractors %}
+              {% for s in subcontractors %}
+              <tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{{ s.company_name }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">{{ s.contact_name }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">{{ s.title or "N/A" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                  {% if s.years_experience is not none %}
+                    {{ s.years_experience }}
+                  {% else %}
+                    N/A
+                  {% endif %}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">{{ s.country_name or "N/A" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                    {% if s.resource_status == 'Active' %}bg-emerald-100 text-emerald-800{% else %}bg-slate-100 text-slate-600{% endif %}">
+                    {{ s.resource_status if s.resource_status else "Unknown" }}
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                  <div class="flex flex-wrap gap-2">
+                    <a href="/subcontractors?subcontractor_id={{ s.subcontractor_id }}&mode=view"
+                       class="px-3 py-1 rounded-md border border-slate-300 hover:bg-slate-50">
+                      View
+                    </a>
+                    <a href="/subcontractors?subcontractor_id={{ s.subcontractor_id }}"
+                       class="px-3 py-1 rounded-md border border-slate-300 hover:bg-slate-50">
+                      Edit
+                    </a>
+                    <form method="post" action="/subcontractors/deactivate" class="inline">
+                      <input type="hidden" name="subcontractor_id" value="{{ s.subcontractor_id }}">
+                      <button type="submit"
+                              class="px-3 py-1 rounded-md border border-rose-200 text-rose-700 hover:bg-rose-50"
+                              {% if s.resource_status != 'Active' %}disabled{% endif %}>
+                        Deactivate
+                      </button>
+                    </form>
+
+                    <form method="post" action="/subcontractors/delete" class="inline" onsubmit="return confirm('Delete this subcontractor? This cannot be undone.');">
+                      <input type="hidden" name="subcontractor_id" value="{{ s.subcontractor_id }}">
+                      <button type="submit"
+                              class="px-3 py-1 rounded-md border border-rose-300 text-rose-800 hover:bg-rose-50">
+                        Delete
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="7" class="px-6 py-6 text-sm text-slate-500">No subcontractors loaded yet.</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid gap-6 lg:grid-cols-3">
+    <form class="lg:col-span-2 space-y-6" method="post" action="/subcontractors">
+      <input type="hidden" name="subcontractor_id" value="{{ subcontractor.subcontractor_id if subcontractor }}">
+      <input type="hidden" name="resource_id" value="{{ subcontractor.resource_id if subcontractor }}">
+      <input type="hidden" name="resource_type" value="Subcontractor">
+
+      {% if view_mode %}
+      <div class="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2 rounded-md text-sm">
+        Read-only view. Use Edit to make changes.
+      </div>
+      {% endif %}
+      {% if error %}
+      <div class="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-2 rounded-md text-sm">
+        {{ error }}
+      </div>
+      {% endif %}
+
+      <fieldset class="space-y-6" {% if view_mode %}disabled{% endif %}>
+      <div class="bg-white border border-slate-200 rounded-lg">
+        <div class="px-6 py-4 border-b border-slate-200">
+          <h3 class="text-base font-semibold text-slate-800">Section A - Personal and HR Information</h3>
+          <p class="text-sm text-slate-500">Subcontractor table fields only.</p>
+        </div>
+        <div class="p-6 grid gap-4 md:grid-cols-2">
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Company Name</label>
+            <input type="text" name="company_name" value="{{ subcontractor.company_name if subcontractor }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Contact Name</label>
+            <input type="text" name="contact_name" value="{{ subcontractor.contact_name if subcontractor }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Email</label>
+            <input type="email" name="email" value="{{ subcontractor.email if subcontractor }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Phone</label>
+            <input type="tel" name="phone" value="{{ subcontractor.phone if subcontractor }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Title</label>
+            <input type="text" name="title" value="{{ subcontractor.title if subcontractor }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Years of Experience</label>
+            <input type="number" name="years_experience" min="0" value="{{ subcontractor.years_experience if subcontractor }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Residence Country</label>
+            <select name="residence_country_id" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Select country</option>
+              {% for country in countries %}
+              <option value="{{ country.country_id if country.country_id is defined else country[0] }}"
+                {% if subcontractor and subcontractor.residence_country_id == (country.country_id if country.country_id is defined else country[0]) %}
+                  selected
+                {% elif not subcontractor and (country.name if country.name is defined else country[1]) == 'Jordan' %}
+                  selected
+                {% endif %}>
+                {{ country.name if country.name is defined else country[1] }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Birth Date</label>
+            <input type="date" name="birth_date" value="{{ subcontractor.birth_date if subcontractor }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-lg">
+        <div class="px-6 py-4 border-b border-slate-200">
+          <h3 class="text-base font-semibold text-slate-800">Section B - Resource Profile</h3>
+          <p class="text-sm text-slate-500">Resource table fields only (one resource per subcontractor).</p>
+        </div>
+        <div class="p-6 grid gap-4 md:grid-cols-2">
+          <div>
+            <label class="block text-sm font-medium text-slate-700">Status</label>
+            <select name="resource_status" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option {% if subcontractor and subcontractor.resource_status == "Active" %}selected{% endif %}>Active</option>
+              <option {% if subcontractor and subcontractor.resource_status == "Inactive" %}selected{% endif %}>Inactive</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2 mt-6">
+            <input type="checkbox" name="is_willing_to_travel" class="h-4 w-4 text-blue-600 border-slate-300 rounded" {% if subcontractor and subcontractor.is_willing_to_travel %}checked{% endif %}>
+            <label class="text-sm text-slate-700">Willing to Travel</label>
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-slate-700">Bio Text</label>
+            <textarea name="bio_text" rows="3" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">{{ subcontractor.bio_text if subcontractor }}</textarea>
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-slate-700">CV Text</label>
+            <textarea name="cv_text" rows="4" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">{{ subcontractor.cv_text if subcontractor }}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-lg">
+        <div class="px-6 py-4 border-b border-slate-200">
+          <h3 class="text-base font-semibold text-slate-800">Certifications</h3>
+          <p class="text-sm text-slate-500">Linked via Resource -> ResourceCertification -> Certification.</p>
+        </div>
+        <div class="p-6 grid gap-6 lg:grid-cols-2">
+          <div class="border border-slate-200 rounded-md p-4 space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-slate-700">Certification</label>
+              <input list="certification-options" name="add_certification_name" placeholder="Search certification" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <datalist id="certification-options">
+                {% for certification in certifications %}
+                <option value="{{ certification.name if certification.name is defined else certification[1] }}"></option>
+                {% endfor %}
+              </datalist>
+            </div>
+            <div class="grid gap-3 md:grid-cols-2">
+              <div>
+                <label class="block text-sm font-medium text-slate-700">Obtained Date</label>
+                <input type="date" name="add_certification_obtained_date" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700">Expiry Date</label>
+                <input type="date" name="add_certification_expiry_date" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-slate-700">Issuing Body</label>
+              <input type="text" name="add_certification_issuing_body" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <button type="submit" class="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700">&raquo; Add</button>
+            </div>
+          </div>
+
+          <div class="border border-slate-200 rounded-md p-4">
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-slate-200">
+                <thead class="bg-slate-50">
+                  <tr>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Certification Name</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Obtained Date</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Expiry Date</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Issuing Body</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+
+                <tbody class="bg-white divide-y divide-slate-200">
+                  {% if subcontractor_certifications %}
+                    {% for cert in subcontractor_certifications %}
+                    <tr>
+                      <td class="px-4 py-2 text-sm text-slate-700">
+                        {{ cert[1] }}
+                        <input type="hidden" name="certification_id[]" value="{{ cert[0] }}">
+                      </td>
+                      <td class="px-4 py-2">
+                        <input type="date" name="certification_obtained_date[]" value="{{ cert[2] }}" class="w-full px-2 py-1 border border-slate-300 rounded-md text-sm">
+                      </td>
+                      <td class="px-4 py-2">
+                        <input type="date" name="certification_expiry_date[]" value="{{ cert[3] }}" class="w-full px-2 py-1 border border-slate-300 rounded-md text-sm">
+                      </td>
+                      <td class="px-4 py-2">
+                        <input type="text" name="certification_issuing_body[]" value="{{ cert[4] }}" class="w-full px-2 py-1 border border-slate-300 rounded-md text-sm">
+                      </td>
+                      <td class="px-4 py-2">
+                        <button type="button" class="text-sm text-rose-600 hover:text-rose-700">Remove</button>
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr>
+                      <td colspan="5" class="px-4 py-3 text-sm text-slate-500">
+                        No certifications linked.
+                      </td>
+                    </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-lg">
+        <div class="px-6 py-4 border-b border-slate-200">
+          <h3 class="text-base font-semibold text-slate-800">Languages</h3>
+          <p class="text-sm text-slate-500">Linked via Resource -> ResourceLanguage -> Language.</p>
+        </div>
+        <div class="p-6 space-y-4">
+          <datalist id="language-options">
+            {% for language in languages %}
+            <option value="{{ language.name if language.name is defined else language[1] }}" data-id="{{ language.language_id if language.language_id is defined else language[0] }}"></option>
+            {% endfor %}
+          </datalist>
+
+          <div id="language-rows" class="space-y-3">
+            {% if subcontractor_languages %}
+              {% for lang in subcontractor_languages %}
+              <div class="grid gap-3 md:grid-cols-6 items-end" data-language-row>
+                <div class="md:col-span-3">
+                  <label class="block text-sm font-medium text-slate-700">Language</label>
+                  <input type="text"
+                         list="language-options"
+                         class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                         value="{{ lang[1] }}"
+                         data-language-input>
+                  <input type="hidden" name="language_id[]" value="{{ lang[0] }}" data-language-id>
+                </div>
+                <div class="md:col-span-2">
+                  <label class="block text-sm font-medium text-slate-700">Proficiency</label>
+                  <select name="language_proficiency[]" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm" data-language-proficiency>
+                    {% for level in ['Basic', 'Intermediate', 'Fluent', 'Native'] %}
+                    <option value="{{ level }}" {% if lang[2] == level %}selected{% endif %}>{{ level }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="md:col-span-1">
+                  <button type="button" class="text-sm text-rose-600 hover:text-rose-700" data-language-remove>Remove</button>
+                </div>
+              </div>
+              {% endfor %}
+            {% else %}
+              <div class="grid gap-3 md:grid-cols-6 items-end" data-language-row>
+                <div class="md:col-span-3">
+                  <label class="block text-sm font-medium text-slate-700">Language</label>
+                  <input type="text"
+                         list="language-options"
+                         class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                         data-language-input>
+                  <input type="hidden" name="language_id[]" data-language-id disabled>
+                </div>
+                <div class="md:col-span-2">
+                  <label class="block text-sm font-medium text-slate-700">Proficiency</label>
+                  <select name="language_proficiency[]" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm" data-language-proficiency disabled>
+                    {% for level in ['Basic', 'Intermediate', 'Fluent', 'Native'] %}
+                    <option value="{{ level }}">{{ level }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="md:col-span-1">
+                  <button type="button" class="text-sm text-rose-600 hover:text-rose-700 invisible" data-language-remove>Remove</button>
+                </div>
+              </div>
+            {% endif %}
+          </div>
+
+          <button type="button" class="px-3 py-2 text-sm rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 hidden" id="language-add">
+            Add another language
+          </button>
+        </div>
+      </div>
+
+      <script>
+        (function () {
+          const rowsContainer = document.getElementById("language-rows");
+          const addButton = document.getElementById("language-add");
+          if (!rowsContainer || !addButton) return;
+
+          const options = Array.from(document.querySelectorAll("#language-options option"));
+          const nameToId = new Map(options.map((opt) => [opt.value, opt.getAttribute("data-id")]));
+
+          const updateAddButton = () => {
+            const rows = Array.from(rowsContainer.querySelectorAll("[data-language-row]"));
+            const lastRow = rows[rows.length - 1];
+            const lastId = lastRow.querySelector("[data-language-id]").value;
+            if (lastId) {
+              addButton.classList.remove("hidden");
+            } else {
+              addButton.classList.add("hidden");
+            }
+          };
+
+          const wireRow = (row) => {
+            const input = row.querySelector("[data-language-input]");
+            const idInput = row.querySelector("[data-language-id]");
+            const proficiency = row.querySelector("[data-language-proficiency]");
+            const removeBtn = row.querySelector("[data-language-remove]");
+
+            input.addEventListener("change", () => {
+              const matchId = nameToId.get(input.value) || "";
+              idInput.value = matchId;
+              idInput.disabled = !matchId;
+              if (proficiency) {
+                proficiency.disabled = !matchId;
+              }
+              updateAddButton();
+            });
+
+            removeBtn.addEventListener("click", () => {
+              const rows = Array.from(rowsContainer.querySelectorAll("[data-language-row]"));
+              if (rows.length === 1) {
+                input.value = "";
+                idInput.value = "";
+                idInput.disabled = true;
+                if (proficiency) {
+                  proficiency.selectedIndex = 0;
+                  proficiency.disabled = true;
+                }
+                updateAddButton();
+                return;
+              }
+              row.remove();
+              updateAddButton();
+            });
+          };
+
+          Array.from(rowsContainer.querySelectorAll("[data-language-row]")).forEach(wireRow);
+
+          addButton.addEventListener("click", () => {
+            const row = document.createElement("div");
+            row.className = "grid gap-3 md:grid-cols-6 items-end";
+            row.setAttribute("data-language-row", "");
+            row.innerHTML = [
+              '<div class="md:col-span-3">',
+              '  <label class="block text-sm font-medium text-slate-700">Language</label>',
+              '  <input type="text" list="language-options" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" data-language-input>',
+              '  <input type="hidden" name="language_id[]" data-language-id disabled>',
+              '</div>',
+              '<div class="md:col-span-2">',
+              '  <label class="block text-sm font-medium text-slate-700">Proficiency</label>',
+              '  <select name="language_proficiency[]" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md text-sm" data-language-proficiency disabled>',
+              '    <option value="Basic">Basic</option>',
+              '    <option value="Intermediate">Intermediate</option>',
+              '    <option value="Fluent">Fluent</option>',
+              '    <option value="Native">Native</option>',
+              '  </select>',
+              '</div>',
+              '<div class="md:col-span-1">',
+              '  <button type="button" class="text-sm text-rose-600 hover:text-rose-700" data-language-remove>Remove</button>',
+              '</div>',
+            ].join("");
+            rowsContainer.appendChild(row);
+            wireRow(row);
+            updateAddButton();
+          });
+
+          updateAddButton();
+        })();
+      </script>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <button type="submit" class="px-5 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700" {% if view_mode %}disabled{% endif %}>Save Subcontractor</button>
+        <button type="button" class="px-5 py-2 text-sm font-medium rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">Cancel</button>
+        <p class="text-xs text-slate-500">Saving creates or updates both Subcontractor and Resource records.</p>
+      </div>
+      </fieldset>
+    </form>
+
+    <div class="space-y-6">
+      <div class="bg-white border border-slate-200 rounded-lg p-5">
+        <h4 class="text-sm font-semibold text-slate-800 mb-2">Data Flow Logic</h4>
+        <ul class="text-sm text-slate-600 space-y-1">
+          <li>Subcontractor fields save to Subcontractor table.</li>
+          <li>Profile fields save to Resource table with resource_type = Subcontractor.</li>
+          <li>Deactivate performs soft status change only.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

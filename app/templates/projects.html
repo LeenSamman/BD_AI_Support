@@ -1,0 +1,367 @@
+{% extends "base.html" %}
+{% block title %}Projects - Staffing Admin{% endblock %}
+{% block header %}Projects{% endblock %}
+{% block subheader %}Manage projects{% endblock %}
+{% block content %}
+<div class="space-y-8">
+  <div class="bg-white border border-slate-200 rounded-lg">
+    <div class="flex flex-wrap items-center justify-between gap-4 px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-800">Project List</h2>
+        <p class="text-sm text-slate-500">Projects with client, country, and primary business line.</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <a href="/projects"
+           class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700">
+          Add Project
+        </a>
+        <a href="/projects/export" class="px-4 py-2 text-sm font-medium rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">
+          Export
+        </a>
+      </div>
+    </div>
+
+    <div class="p-6">
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200">
+          <thead class="bg-slate-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Project Name</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Client Name</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Country</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Primary Business Line</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Start Date</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">End Date</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody class="bg-white divide-y divide-slate-200">
+            {% if projects %}
+              {% for p in projects %}
+              <tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{{ p.name }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">{{ p.client_name or "Not assigned" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">{{ p.country_name or "Not assigned" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">{{ p.business_line_name or "Not assigned" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">{{ p.status or "Planned" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">{{ p.start_date or "" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">{{ p.end_date or "" }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                  <div class="flex flex-wrap gap-2">
+                    <a href="/projects?project_id={{ p.project_id }}&mode=view"
+                       class="px-3 py-1 rounded-md border border-slate-300 hover:bg-slate-50">
+                      View
+                    </a>
+                    <a href="/projects?project_id={{ p.project_id }}"
+                       class="px-3 py-1 rounded-md border border-slate-300 hover:bg-slate-50">
+                      Edit
+                    </a>
+                    <button type="button" class="px-3 py-1 rounded-md border border-rose-300 text-rose-800 hover:bg-rose-50">
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="8" class="px-6 py-6 text-sm text-slate-500">No projects loaded yet.</td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <form class="space-y-6" method="post" action="/projects">
+    <input type="hidden" name="project_id" value="{{ project.project_id if project }}">
+
+    <div class="bg-white border border-slate-200 rounded-lg">
+      <div class="px-6 py-4 border-b border-slate-200">
+        <h3 class="text-base font-semibold text-slate-800">Section A - Project Information</h3>
+        <p class="text-sm text-slate-500">Project table fields only.</p>
+      </div>
+      <div class="p-6 grid gap-4 md:grid-cols-2">
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Project Name</label>
+          <input type="text" name="name" required value="{{ project.name if project }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <p class="text-xs text-rose-600 mt-1">Required.</p>
+        </div>
+        {% set ns_client = namespace(name="", id="") %}
+        {% if project %}
+          {% for client in clients %}
+            {% set cid = client.client_id if client.client_id is defined else client[0] %}
+            {% if project.client_id == cid %}
+              {% set ns_client.name = client.name if client.name is defined else client[1] %}
+              {% set ns_client.id = cid %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Client</label>
+          <input type="text"
+                 list="client-options"
+                 required
+                 class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                 value="{{ ns_client.name }}"
+                 data-client-input>
+          <input type="hidden" name="client_id" value="{{ ns_client.id }}" data-client-id>
+          <datalist id="client-options">
+            {% for client in clients %}
+            <option value="{{ client.name if client.name is defined else client[1] }}" data-id="{{ client.client_id if client.client_id is defined else client[0] }}"></option>
+            {% endfor %}
+          </datalist>
+        </div>
+
+        {% set ns_country = namespace(name="", id="") %}
+        {% if project %}
+          {% for country in countries %}
+            {% set coid = country.country_id if country.country_id is defined else country[0] %}
+            {% if project.country_id == coid %}
+              {% set ns_country.name = country.name if country.name is defined else country[1] %}
+              {% set ns_country.id = coid %}
+            {% endif %}
+          {% endfor %}
+        {% else %}
+          {% for country in countries %}
+            {% set cname = country.name if country.name is defined else country[1] %}
+            {% if cname == 'Jordan' %}
+              {% set ns_country.name = cname %}
+              {% set ns_country.id = country.country_id if country.country_id is defined else country[0] %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Country</label>
+          <input type="text"
+                 list="country-options"
+                 required
+                 class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                 value="{{ ns_country.name }}"
+                 data-country-input>
+          <input type="hidden" name="country_id" value="{{ ns_country.id }}" data-country-id>
+          <datalist id="country-options">
+            {% for country in countries %}
+            <option value="{{ country.name if country.name is defined else country[1] }}" data-id="{{ country.country_id if country.country_id is defined else country[0] }}"></option>
+            {% endfor %}
+          </datalist>
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-sm font-medium text-slate-700">Description</label>
+          <textarea name="description" rows="3" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">{{ project.description if project }}</textarea>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Start Date</label>
+          <input type="date" name="start_date" value="{{ project.start_date if project }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700">End Date</label>
+          <input type="date" name="end_date" value="{{ project.end_date if project }}" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white border border-slate-200 rounded-lg">
+      <div class="px-6 py-4 border-b border-slate-200">
+        <h3 class="text-base font-semibold text-slate-800">Section B - Business Lines</h3>
+        <p class="text-sm text-slate-500">The first selected business line is treated as the main one.</p>
+      </div>
+      <div class="p-6 space-y-4">
+        {% if business_lines is defined and business_lines %}
+        <div id="business-line-options" class="hidden">
+          {% for bl in business_lines %}
+          <option value="{{ bl.business_line_id if bl.business_line_id is defined else bl[0] }}">
+            {{ bl.name if bl.name is defined else bl[1] }}
+          </option>
+          {% endfor %}
+        </div>
+
+        <div id="business-line-dropdowns" class="space-y-3">
+          {% if project_business_lines is defined and project_business_lines %}
+            {% for item in project_business_lines %}
+              {% if item is string %}
+                {% set bl_id = item %}
+              {% elif item is sequence %}
+                {% set bl_id = item[0] %}
+              {% else %}
+                {% set bl_id = item %}
+              {% endif %}
+              <div class="grid gap-3 md:grid-cols-2 items-end" data-business-line-row>
+                <div>
+                  <label class="block text-sm font-medium text-slate-700">Business Line</label>
+                  <select name="business_line_ids"
+                          class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          data-business-line-select>
+                    <option value="">Select business line</option>
+                    {% for bl in business_lines %}
+                    {% set opt_id = bl.business_line_id if bl.business_line_id is defined else bl[0] %}
+                    <option value="{{ opt_id }}" {% if opt_id == bl_id %}selected{% endif %}>
+                      {{ bl.name if bl.name is defined else bl[1] }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+          <div class="grid gap-3 md:grid-cols-2 items-end" data-business-line-row>
+            <div>
+              <label class="block text-sm font-medium text-slate-700">Business Line</label>
+              <select name="business_line_ids"
+                      class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      data-business-line-select>
+                <option value="">Select business line</option>
+                {% for bl in business_lines %}
+                <option value="{{ bl.business_line_id if bl.business_line_id is defined else bl[0] }}">
+                  {{ bl.name if bl.name is defined else bl[1] }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+        {% else %}
+        <div class="text-sm text-slate-500">No business lines available.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="bg-white border border-slate-200 rounded-lg">
+      <div class="px-6 py-4 border-b border-slate-200">
+        <h3 class="text-base font-semibold text-slate-800">Section C - Project Status</h3>
+        <p class="text-sm text-slate-500">Project status value.</p>
+      </div>
+      <div class="p-6 grid gap-4 md:grid-cols-2">
+        <div>
+          <label class="block text-sm font-medium text-slate-700">Status</label>
+          {% set current_status = project.status if project and project.status else "Planned" %}
+          <select name="status" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" {% if view_mode %}disabled{% endif %}>
+            {% for status in ["Planned", "Active", "On Hold", "Completed", "Cancelled"] %}
+            <option value="{{ status }}" {% if status == current_status %}selected{% endif %}>{{ status }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <button type="submit" class="px-5 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700">Save Project</button>
+      <button type="button" class="px-5 py-2 text-sm font-medium rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50">Cancel</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  (function () {
+    const dropdownsContainer = document.getElementById("business-line-dropdowns");
+    const allOptions = Array.from(document.querySelectorAll("#business-line-options option"));
+
+    const buildOptions = (selectedIds, currentValue) => {
+      const options = ["<option value=''>Select business line</option>"];
+      allOptions.forEach((opt) => {
+        const value = opt.getAttribute("value");
+        const name = (opt.textContent || "").trim();
+        if (value === currentValue || !selectedIds.includes(value)) {
+          const selected = value === currentValue ? " selected" : "";
+          options.push(`<option value='${value}'${selected}>${name}</option>`);
+        }
+      });
+      return options.join("");
+    };
+
+    const getSelectedIds = () => {
+      const selects = Array.from(document.querySelectorAll("[data-business-line-select]"));
+      return selects.map((select) => select.value).filter((value) => value);
+    };
+
+    const refreshDropdowns = () => {
+      if (!dropdownsContainer) return;
+      const selects = Array.from(dropdownsContainer.querySelectorAll("[data-business-line-select]"));
+      const selectedIds = getSelectedIds();
+
+      selects.forEach((select) => {
+        const currentValue = select.value;
+        select.innerHTML = buildOptions(selectedIds.filter((id) => id !== currentValue), currentValue);
+        select.value = currentValue;
+      });
+
+      const lastSelect = selects[selects.length - 1];
+      if (lastSelect && lastSelect.value) {
+        const row = document.createElement("div");
+        row.className = "grid gap-3 md:grid-cols-2 items-end";
+        row.setAttribute("data-business-line-row", "");
+        row.innerHTML = [
+          "<div>",
+          "  <label class='block text-sm font-medium text-slate-700'>Business Line</label>",
+          "  <select name='business_line_ids' class='mt-1 w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500' data-business-line-select>",
+          buildOptions(selectedIds, ""),
+          "  </select>",
+          "</div>",
+        ].join("");
+        dropdownsContainer.appendChild(row);
+      }
+    };
+
+    if (dropdownsContainer) {
+      dropdownsContainer.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLSelectElement)) return;
+        if (!target.hasAttribute("data-business-line-select")) return;
+        refreshDropdowns();
+      });
+
+      refreshDropdowns();
+    }
+
+    const projectForm = document.querySelector("form[action='/projects']");
+    if (projectForm) {
+      projectForm.addEventListener("submit", (event) => {
+        const checked = Array.from(document.querySelectorAll("[data-business-line-check]")).filter((el) => el.checked);
+        const primary = document.querySelector("[data-business-line-primary]:checked");
+        if (checked.length === 0 || !primary) {
+          event.preventDefault();
+          alert("Please select at least one business line and mark exactly one as primary.");
+          return;
+        }
+        const primaryRow = primary.closest("tr");
+        const primaryCheckbox = primaryRow ? primaryRow.querySelector("[data-business-line-check]") : null;
+        if (primaryCheckbox && !primaryCheckbox.checked) {
+          event.preventDefault();
+          alert("Primary business line must be one of the selected business lines.");
+        }
+      });
+    }
+
+    const clientInput = document.querySelector("[data-client-input]");
+    const clientIdInput = document.querySelector("[data-client-id]");
+    if (clientInput && clientIdInput) {
+      const clientOptions = Array.from(document.querySelectorAll("#client-options option"));
+      const clientNameToId = new Map(clientOptions.map((opt) => [opt.value, opt.getAttribute("data-id")]));
+      const updateClient = () => {
+        const matchId = clientNameToId.get(clientInput.value) || "";
+        clientIdInput.value = matchId;
+      };
+      clientInput.addEventListener("change", updateClient);
+      clientInput.addEventListener("blur", updateClient);
+    }
+
+    const countryInput = document.querySelector("[data-country-input]");
+    const countryIdInput = document.querySelector("[data-country-id]");
+    if (countryInput && countryIdInput) {
+      const countryOptions = Array.from(document.querySelectorAll("#country-options option"));
+      const countryNameToId = new Map(countryOptions.map((opt) => [opt.value, opt.getAttribute("data-id")]));
+      const updateCountry = () => {
+        const matchId = countryNameToId.get(countryInput.value) || "";
+        countryIdInput.value = matchId;
+      };
+      countryInput.addEventListener("change", updateCountry);
+      countryInput.addEventListener("blur", updateCountry);
+    }
+
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Reference Data - Staffing Admin{% endblock %}
+{% block header %}Reference Data{% endblock %}
+{% block subheader %}Manage lookup tables{% endblock %}
+{% block content %}
+<div class="bg-white border border-slate-200 rounded-lg">
+  <div class="border-b border-slate-200 flex flex-wrap">
+    {% set tabs = [
+      ('countries', 'Countries'),
+      ('departments', 'Departments'),
+      ('sectors', 'Sectors'),
+      ('business-lines', 'Business Lines'),
+      ('languages', 'Languages'),
+      ('certifications', 'Certifications'),
+      ('roles', 'Roles')
+    ] %}
+    {% for slug, label in tabs %}
+    <a href="/reference-data/{{ slug }}" class="px-4 py-3 text-sm font-medium {% if slug == 'countries' %}text-slate-900 bg-slate-100{% else %}text-slate-600 hover:text-slate-900 hover:bg-slate-50{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+  <div class="p-6">
+    <!-- Search Box -->
+    <div class="mb-4">
+      <form method="get" class="flex gap-2">
+        <input type="text" name="search" value="{{ search }}" placeholder="Search by name or ISO code" class="flex-1 px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Search</button>
+      </form>
+    </div>
+    <!-- Countries Table -->
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-slate-200">
+        <thead class="bg-slate-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Country Name</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">ISO Code</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Region</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-slate-200">
+          {% for country in countries %}
+          <tr>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{{ country[0] }}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{{ country[1] or '-' }}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{{ country[2] or '-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="mt-4 flex justify-between items-center">
+      <div class="text-sm text-slate-500">
+        Showing {{ (page-1)*10 + 1 }} to {{ [page*10, total]|min }} of {{ total }} countries
+      </div>
+      <div class="flex gap-2">
+        {% if page > 1 %}
+        <a href="?page={{ page-1 }}{% if search %}&search={{ search }}{% endif %}" class="px-3 py-1 border border-slate-300 rounded text-sm hover:bg-slate-50">Previous</a>
+        {% endif %}
+        {% for p in range(start_page, end_page + 1) %}
+        <a href="?page={{ p }}{% if search %}&search={{ search }}{% endif %}" class="px-3 py-1 border {% if p == page %}border-blue-500 bg-blue-50 text-blue-700{% else %}border-slate-300 hover:bg-slate-50{% endif %} rounded text-sm">{{ p }}</a>
+        {% endfor %}
+        {% if page < total_pages %}
+        <a href="?page={{ page+1 }}{% if search %}&search={{ search }}{% endif %}" class="px-3 py-1 border border-slate-300 rounded text-sm hover:bg-slate-50">Next</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
