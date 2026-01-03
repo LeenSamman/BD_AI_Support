@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}RFP Paste & Analyze{% endblock %}
+{% block header %}RFP Paste & Analyze{% endblock %}
+{% block subheader %}Paste extracted text and run the requirements extractor{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{{ error }}</div>
+{% endif %}
+
+<style>
+  .panel {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.06);
+    padding: 1rem;
+  }
+</style>
+
+<div class="flex flex-col gap-6 w-full">
+  <div class="flex flex-col w-full">
+    <form id="rfp-text-form" method="post" action="/rfp/text" class="flex flex-col gap-4 h-full panel">
+      <div>
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-lg font-semibold text-slate-800">Paste RFP Text</h2>
+          <span class="text-xs text-slate-500">Plain text only</span>
+        </div>
+        <textarea name="rfp_text" placeholder="Paste extracted RFP text here..."
+                  class="w-full h-72 p-3 border rounded-lg text-sm">{{ rfp_text or '' }}</textarea>
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold text-slate-800">Model</label>
+        <select name="model_name" class="mt-2 w-full p-3 border rounded-lg text-sm">
+          {% for model in available_models %}
+            <option value="{{ model }}"{% if model == selected_model %} selected{% endif %}>{{ model }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button type="submit"
+              class="w-full bg-blue-600 text-white font-medium py-3 rounded-lg text-center hover:bg-blue-700 mt-auto">
+        Analyze
+      </button>
+    </form>
+  </div>
+
+  <div id="rfp-results-panel" class="flex flex-col w-full panel">
+    <h2 class="text-lg font-semibold text-slate-800 mb-4">Extraction Results</h2>
+
+    {% if not result %}
+      <p class="text-sm text-slate-500">Waiting for text...</p>
+    {% else %}
+      <div class="space-y-6 text-sm text-slate-800">
+
+        {% macro field(title, value) %}
+        <div>
+          <h3 class="font-bold mb-1">{{ title }}</h3>
+          {% if value %}<p class="whitespace-pre-wrap leading-relaxed">{{ value }}</p>
+          {% else %}<p class="italic text-slate-500">—</p>
+          {% endif %}
+        </div>
+        {% endmacro %}
+
+        {% macro checklist(title, items, key_name) %}
+        <div>
+          <h3 class="font-bold mb-1">{{ title }}</h3>
+          {% if items and items|length > 0 %}
+            <ul class="list-disc pl-5 space-y-1">
+              {% for item in items %}
+                <li>
+                  <span class="font-semibold">{{ item[key_name] }}</span>
+                  {% if item.strength %}<span class="text-xs text-slate-500"> ({{ item.strength }})</span>{% endif %}
+                  {% if item.why %}<span class="text-slate-600"> — {{ item.why }}</span>{% endif %}
+                  {% if item.evidence %}<div class="text-xs text-slate-500 mt-1">Evidence: "{{ item.evidence }}"</div>{% endif %}
+                  {% if item.page_hint %}<div class="text-xs text-slate-500">Page: {{ item.page_hint }}</div>{% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}<p class="italic text-slate-500">—</p>
+          {% endif %}
+        </div>
+        {% endmacro %}
+
+        {% macro qa_list(title, items, key_name, why_name) %}
+        <div>
+          <h3 class="font-bold mb-1">{{ title }}</h3>
+          {% if items and items|length > 0 %}
+            <ul class="list-disc pl-5 space-y-1">
+              {% for item in items %}
+                <li>
+                  <span class="font-semibold">{{ item[key_name] }}</span>
+                  {% if item[why_name] %}<span class="text-slate-600"> — {{ item[why_name] }}</span>{% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}<p class="italic text-slate-500">—</p>
+          {% endif %}
+        </div>
+        {% endmacro %}
+
+        {{ field("RFP Title", result.rfp_title) }}
+        {{ field("Issuing Organization", result.issuing_organization) }}
+        {{ field("Summary", result.summary_paragraph) }}
+
+        <div>
+          <h3 class="font-bold mb-1">Quick Facts</h3>
+          <div class="space-y-2">
+            <div>
+              <div class="font-semibold">Questions Deadline</div>
+              {% if result.rfp_quick_facts.deadlines.questions_deadline.date or result.rfp_quick_facts.deadlines.questions_deadline.time or result.rfp_quick_facts.deadlines.questions_deadline.timezone or result.rfp_quick_facts.deadlines.questions_deadline.contact_email %}
+                <p class="text-slate-700">
+                  {{ result.rfp_quick_facts.deadlines.questions_deadline.date }}
+                  {{ result.rfp_quick_facts.deadlines.questions_deadline.time }}
+                  {{ result.rfp_quick_facts.deadlines.questions_deadline.timezone }}
+                  {% if result.rfp_quick_facts.deadlines.questions_deadline.contact_email %}
+                    — {{ result.rfp_quick_facts.deadlines.questions_deadline.contact_email }}
+                  {% endif %}
+                </p>
+              {% else %}
+                <p class="italic text-slate-500">—</p>
+              {% endif %}
+            </div>
+            <div>
+              <div class="font-semibold">Proposal Due</div>
+              {% if result.rfp_quick_facts.deadlines.proposal_due.date or result.rfp_quick_facts.deadlines.proposal_due.time or result.rfp_quick_facts.deadlines.proposal_due.timezone %}
+                <p class="text-slate-700">
+                  {{ result.rfp_quick_facts.deadlines.proposal_due.date }}
+                  {{ result.rfp_quick_facts.deadlines.proposal_due.time }}
+                  {{ result.rfp_quick_facts.deadlines.proposal_due.timezone }}
+                </p>
+              {% else %}
+                <p class="italic text-slate-500">—</p>
+              {% endif %}
+            </div>
+            <div>
+              <div class="font-semibold">Pre-bid / Presentations</div>
+              {% if result.rfp_quick_facts.pre_bid_presentations and result.rfp_quick_facts.pre_bid_presentations|length > 0 %}
+                <ul class="list-disc pl-5 space-y-1">
+                  {% for event in result.rfp_quick_facts.pre_bid_presentations %}
+                    <li>
+                      <span class="font-semibold">{{ event.title }}</span>
+                      {% if event.mandatory %}<span class="text-xs text-slate-500"> ({{ event.mandatory }})</span>{% endif %}
+                      <div class="text-slate-700">
+                        {{ event.date }} {{ event.time }} {{ event.timezone }}{% if event.location %} — {{ event.location }}{% endif %}
+                      </div>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <p class="italic text-slate-500">—</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        {{ checklist("Company Requirements", result.requirements_checklist.company, "requirement") }}
+        {{ checklist("Team Requirements", result.requirements_checklist.team, "requirement") }}
+        {{ checklist("Technical Requirements", result.requirements_checklist.technical, "requirement") }}
+        {{ checklist("Financial/Commercial Requirements", result.requirements_checklist.financial, "requirement") }}
+        {{ checklist("Submission Requirements", result.requirements_checklist.submission, "requirement") }}
+        {{ checklist("Deliverables & Timeline", result.requirements_checklist.deliverables_timeline, "requirement") }}
+        {{ checklist("Evaluation Criteria", result.requirements_checklist.evaluation_criteria, "requirement") }}
+        {{ checklist("Risks / Red Flags", result.requirements_checklist.risks_red_flags, "risk") }}
+
+        {{ qa_list("Questions for Client", result.questions_for_client, "question", "why_it_matters") }}
+        {{ qa_list("Missing Information", result.missing_information, "item", "why_missing") }}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div id="rfp-loading-overlay" class="hidden fixed inset-0 bg-white/80 items-center justify-center z-50">
+  <div class="flex flex-col items-center gap-3">
+    <div class="w-10 h-10 border-4 border-slate-200 border-t-slate-700 rounded-full animate-spin"></div>
+    <div class="text-sm text-slate-600">Analyzing text...</div>
+  </div>
+</div>
+
+<script>
+  const textForm = document.getElementById("rfp-text-form");
+  const loadingOverlay = document.getElementById("rfp-loading-overlay");
+  const loaderText = document.querySelector("#rfp-loading-overlay .text-sm");
+  const loadingMessages = [
+    "Extracting summary...",
+    "Scanning requirements...",
+    "Identifying team qualifications...",
+    "Extracting deliverables...",
+    "Evaluating criteria...",
+    "Preparing final structure..."
+  ];
+  let loadingInterval = null;
+
+  const startLoader = () => {
+    loadingOverlay.classList.remove("hidden");
+    loadingOverlay.classList.add("flex");
+    if (!loaderText) {
+      return;
+    }
+    loaderText.innerText = loadingMessages[0];
+    let i = 1;
+    if (loadingInterval) {
+      clearInterval(loadingInterval);
+    }
+    loadingInterval = setInterval(() => {
+      loaderText.innerText = loadingMessages[i % loadingMessages.length];
+      i += 1;
+    }, 3000);
+  };
+
+  const stopLoader = () => {
+    if (loadingInterval) {
+      clearInterval(loadingInterval);
+      loadingInterval = null;
+    }
+    loadingOverlay.classList.add("hidden");
+    loadingOverlay.classList.remove("flex");
+  };
+
+  if (textForm) {
+    textForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      startLoader();
+      try {
+        const formData = new FormData(textForm);
+        const response = await fetch("/rfp/text", { method: "POST", body: formData });
+        const html = await response.text();
+        const newDoc = new DOMParser().parseFromString(html, "text/html");
+        const currentResults = document.getElementById("rfp-results-panel");
+        const newResults = newDoc.getElementById("rfp-results-panel");
+        if (currentResults && newResults) {
+          currentResults.innerHTML = newResults.innerHTML;
+        }
+      } finally {
+        stopLoader();
+      }
+    });
+  }
+
+  window.addEventListener("beforeunload", () => {
+    if (loadingInterval) {
+      clearInterval(loadingInterval);
+      loadingInterval = null;
+    }
+  });
+</script>
+{% endblock %}

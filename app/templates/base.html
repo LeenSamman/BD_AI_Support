@@ -15,8 +15,12 @@
       </div>
       <nav class="px-4 py-4 space-y-6">
         <div>
-          <a href="/" class="flex items-center px-3 py-2 rounded-md text-sm font-medium {{ 'bg-slate-100 text-slate-900' if active == 'dashboard' else 'text-slate-600 hover:bg-slate-50' }}">Dashboard</a>
-          <a href="/rfp" class="flex items-center px-3 py-2 rounded-md text-sm font-medium {{ 'bg-slate-100 text-slate-900' if active == 'rfp' else 'text-slate-600 hover:bg-slate-50' }}">RFP Workspace</a>
+          <p class="px-3 text-xs uppercase tracking-wide text-slate-400 mb-1">RFP Workspace</p>
+          <div class="space-y-1">
+            <a href="/rfp" class="block px-3 py-2 rounded-md text-sm font-medium {{ 'bg-slate-100 text-slate-900' if active == 'rfp_upload' else 'text-slate-600 hover:bg-slate-50' }}">Upload &amp; Extract</a>
+            <a href="/rfp/text" class="block px-3 py-2 rounded-md text-sm font-medium {{ 'bg-slate-100 text-slate-900' if active == 'rfp_text' else 'text-slate-600 hover:bg-slate-50' }}">Paste &amp; Analyze</a>
+            <a href="/rfp/team" class="block px-3 py-2 rounded-md text-sm font-medium {{ 'bg-slate-100 text-slate-900' if active == 'rfp_team' else 'text-slate-600 hover:bg-slate-50' }}">Team Suggestions</a>
+          </div>
         </div>
         <div>
           <p class="px-3 text-xs uppercase tracking-wide text-slate-400 mb-1">Human Resources</p>

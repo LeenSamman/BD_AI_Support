@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Team Suggestions{% endblock %}
+{% block header %}Team Suggestions{% endblock %}
+{% block subheader %}Coming soon: match employees and subcontractors to extracted roles{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <p class="text-sm text-slate-600">
+    We will recommend internal staff and qualified subcontractors based on extracted roles,
+    skills, and availability.
+  </p>
+  <button type="button"
+          class="mt-4 w-full bg-slate-200 text-slate-600 font-medium py-3 rounded-lg text-center cursor-not-allowed"
+          disabled>
+    Generate Suggestions
+  </button>
+  <p class="mt-2 text-xs text-slate-500">This page will be implemented after OCR + extraction are validated.</p>
+</div>
+{% endblock %}

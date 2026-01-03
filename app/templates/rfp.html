@@ -144,42 +144,14 @@
     <p class="text-sm text-slate-500">Waiting for document...</p>
   {% endif %}
 
-</div>
-
-<!-- ==================  EXTRACTION ================== -->
-<div id="rfp-results-panel" class="mt-8 panel">
-
-  <h2 class="text-lg font-semibold text-slate-800 mb-4">Extraction Results</h2>
-
-  {% if not result %}
-    <p class="text-sm text-slate-500">Waiting for document...</p>
-  {% else %}
-    <div class="space-y-6 text-sm text-slate-800 max-h-[750px] overflow-y-auto">
-
-      {% macro section(title, value) %}
-      <div>
-        <h3 class="font-bold mb-1">{{ title }}</h3>
-        {% if value %}<p>{{ value }}</p>
-        {% else %}<p class="italic text-slate-500">None</p>
-        {% endif %}
-      </div>
-      {% endmacro %}
-
-      {{ section("Summary", result.summary) }}
-      {{ section("Company Requirements", result.company_requirements) }}
-      {{ section("Team Requirements", result.team_requirements) }}
-      {{ section("Technical Requirements", result.technical_requirements) }}
-      {{ section("Financial/Commercial Requirements", result.financial_requirements) }}
-      {{ section("Submission Requirements", result.submission_requirements) }}
-      {{ section("Deliverables & Timeline", result.deliverables_timeline) }}
-      {{ section("Evaluation Criteria", result.evaluation_criteria) }}
-      {{ section("Risks / Red Flags", result.risks) }}
-      {{ section("Questions for Client", result.questions_for_client) }}
-      {{ section("Missing Information", result.missing_information) }}
+  {% if debug %}
+    <div class="mt-3 text-xs text-slate-500">
+      Debug: {{ extracted_char_count }} chars · {{ file_type_detected or 'n/a' }} · {{ extraction_time_ms or 'n/a' }} ms
     </div>
   {% endif %}
 
 </div>
+
 <script>
   const fileInput = document.getElementById("rfp-file-input");
   const fileName = document.getElementById("rfp-file-name");
@@ -199,11 +171,8 @@
   const loadingOverlay = document.getElementById("rfp-loading-overlay");
   const loaderText = document.querySelector("#rfp-loading-overlay .text-sm");
   const loadingMessages = [
-    "Extracting summary...",
-    "Scanning requirements...",
-    "Identifying team qualifications...",
-    "Extracting deliverables...",
-    "Evaluating criteria...",
+    "Extracting Text...",
+    "Applying OCR...",
     "Preparing final structure..."
   ];
   let loadingInterval = null;

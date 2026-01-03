@@ -6,14 +6,20 @@ import sqlite3
 import os
 import csv
 import io
+import json
 import uuid
 import subprocess
-from app.services.rfp_model import call_local_rfp_model
+import logging
+from datetime import datetime
+import time
 from app.services.pdf_extract import extract_pdf_text
-from app.services.docling_extract import extract_with_docling
 from app.services.word_extract import extract_text_from_word
+from app.services.rfp_normalize import normalize_rfp_result
 
 app = FastAPI(title="Staffing Admin")
+
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("docling").setLevel(logging.WARNING)
 
 templates = Jinja2Templates(directory="app/templates")
 UPLOADS_DIR = "uploads"
@@ -27,16 +33,35 @@ RFP_ORIGINAL_DIR_LEGACY = os.path.join("uploads", "rfp")
 RFP_EXTRACTED_MD_DIR = os.path.join("uploads", "rfp_extracted_md")
 RFP_EXTRACTED_MD_DIR_LEGACY = os.path.join("uploads", "rfp_extracted")
 RFP_EXTRACTED_RAW_DIR = os.path.join("uploads", "rfp_extracted_txt")
-RFP_EXTRACTED_RAW_DIR_LEGACY = os.path.join("uploads", "rfp_extracted_raw")
 RFP_MODEL_RAW_DIR = os.path.join("uploads", "rfp_model_raw_response")
 RFP_MODEL_RAW_DIR_LEGACY = os.path.join("uploads", "rfp_model_raw")
+
+AVAILABLE_MODELS = ["qwen2.5-vl-7b-instruct"]
+DEFAULT_MODEL = "qwen2.5-vl-7b-instruct"
+
+def format_duration(ms: float) -> str:
+    if ms < 1:
+        return f"{ms:.2f}ms"
+    if ms < 1000:
+        return f"{round(ms):.0f}ms"
+    if ms < 60000:
+        return f"{ms / 1000:.1f}s"
+    if ms < 3600000:
+        minutes = int(ms // 60000)
+        seconds = int(round((ms % 60000) / 1000))
+        if seconds == 60:
+            minutes += 1
+            seconds = 0
+        return f"{minutes}m {seconds:02d}s"
+    hours = int(ms // 3600000)
+    minutes = int((ms % 3600000) // 60000)
+    return f"{hours}h {minutes:02d}m"
 
 
 def resolve_legacy_path(preferred_path: str, legacy_path: str) -> str:
     if os.path.exists(preferred_path):
         return preferred_path
     if os.path.exists(legacy_path):
-        print(f"RFP extract: using legacy path {legacy_path}")
         return legacy_path
     return preferred_path
 
@@ -498,16 +523,81 @@ async def dashboard(request: Request):
 async def rfp_get(request: Request):
     return templates.TemplateResponse("rfp.html", {
         "request": request,
-        "active": "rfp",
+        "active": "rfp_upload",
         "result": None,
         "extracted_text": "",
         "extracted_text_truncated": False,
+        "available_models": AVAILABLE_MODELS,
+        "selected_model": DEFAULT_MODEL,
         "file_name": None,
         "file_url": None,
         "file_ext": None,
         "preview_url": None,
         "preview_note": None,
         "error": None
+    })
+
+@app.get("/rfp/text", response_class=HTMLResponse)
+async def rfp_text_get(request: Request):
+    selected_model = AVAILABLE_MODELS[0] if AVAILABLE_MODELS else ""
+    return templates.TemplateResponse("rfp_text.html", {
+        "request": request,
+        "active": "rfp_text",
+        "result": None,
+        "rfp_text": "",
+        "available_models": AVAILABLE_MODELS,
+        "selected_model": selected_model,
+        "error": None
+    })
+
+@app.post("/rfp/text", response_class=HTMLResponse)
+async def rfp_text_post(request: Request):
+    form = await request.form()
+    rfp_text = (form.get("rfp_text") or "").strip()
+    model_name = (form.get("model_name") or "").strip()
+    if model_name not in AVAILABLE_MODELS:
+        model_name = AVAILABLE_MODELS[0] if AVAILABLE_MODELS else ""
+    llm_metrics = {
+        "input_chars": len(rfp_text),
+        "input_words": len(rfp_text.split()) if rfp_text else 0,
+        "model_name": model_name,
+        "llm_time_ms": None,
+    }
+
+    if not rfp_text:
+        return templates.TemplateResponse("rfp_text.html", {
+            "request": request,
+            "active": "rfp_text",
+            "result": None,
+            "rfp_text": "",
+            "available_models": AVAILABLE_MODELS,
+            "selected_model": model_name,
+            "llm_metrics": llm_metrics,
+            "error": "Please paste extracted RFP text before analyzing."
+        })
+
+    from app.services.rfp_model import call_local_rfp_model
+
+    llm_start = time.perf_counter()
+    model_result = call_local_rfp_model(rfp_text, model_name=model_name)
+    llm_metrics["llm_time_ms"] = round((time.perf_counter() - llm_start) * 1000, 2)
+    result = normalize_rfp_result(model_result)
+    return templates.TemplateResponse("rfp_text.html", {
+        "request": request,
+        "active": "rfp_text",
+        "result": result,
+        "rfp_text": rfp_text,
+        "available_models": AVAILABLE_MODELS,
+        "selected_model": model_name,
+        "llm_metrics": llm_metrics,
+        "error": None
+    })
+
+@app.get("/rfp/team", response_class=HTMLResponse)
+async def rfp_team_get(request: Request):
+    return templates.TemplateResponse("team_suggestions.html", {
+        "request": request,
+        "active": "rfp_team",
     })
 
 def convert_word_to_pdf(input_path, output_dir):
@@ -593,26 +683,37 @@ async def rfp_preview(file: UploadFile = File(...)):
 
 @app.post("/rfp/upload", response_class=HTMLResponse)
 async def rfp_upload(request: Request, file: UploadFile = File(None)):
-    # Analyze button now processes document first
-    print("🚀 Upload route triggered")
+    print("📥 RFP upload route triggered")
+    debug_enabled = request.query_params.get("debug") == "1"
     form = await request.form()
     rfp_text = (form.get("rfp_text") or "").strip()
     extracted_text = ""
     extracted_text_truncated = False
+    extraction_time_ms = None
+    file_type_detected = None
+    extraction_metrics = {}
 
-    # If `file` is None or has no filename, this branch is skipped and the model won't run.
     if file and file.filename:
-        print("📄 File uploaded:", file.filename)
+        base_id = str(uuid.uuid4())
+        rfp_prefix = f"[RFP:{base_id}]"
+        total_start = time.perf_counter()
+        print(f"{rfp_prefix} 📄 File uploaded: {file.filename}")
         original_name = file.filename or ""
         ext = os.path.splitext(original_name)[1].lower().lstrip(".")
-        print("🔍 File type:", ext)
+        file_type_detected = ext
+        print(f"{rfp_prefix} 📄 File type: {ext}")
+        from app.services.rfp_config import IMAGE_PLACEHOLDER_TOKEN, RFP_MANIFEST_DIR
         if ext not in {"pdf", "doc", "docx"}:
             return templates.TemplateResponse("rfp.html", {
                 "request": request,
-                "active": "rfp",
+                "active": "rfp_upload",
                 "result": None,
                 "extracted_text": extracted_text,
                 "extracted_text_truncated": extracted_text_truncated,
+                "debug": debug_enabled,
+                "extraction_time_ms": extraction_time_ms,
+                "extracted_char_count": len(extracted_text),
+                "file_type_detected": file_type_detected,
                 "file_name": None,
                 "file_url": None,
                 "file_ext": None,
@@ -623,11 +724,17 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
 
         upload_dir = RFP_ORIGINAL_DIR
         os.makedirs(upload_dir, exist_ok=True)
-        base_id = str(uuid.uuid4())
+        print(f'{rfp_prefix} START upload file="{original_name}" ext="{ext}"')
         stored_name = f"{base_id}.{ext}"
         stored_path = os.path.join(upload_dir, stored_name)
+        upload_start = time.perf_counter()
+        file_bytes = await file.read()
+        file_size_bytes = len(file_bytes)
         with open(stored_path, "wb") as f:
-            f.write(await file.read())
+            f.write(file_bytes)
+        upload_ms = (time.perf_counter() - upload_start) * 1000
+        print(f"{rfp_prefix} 💾 File saved")
+        print(f"{rfp_prefix} STAGE upload_save ms={upload_ms:.2f} ({format_duration(upload_ms)})")
 
         legacy_stored_path = os.path.join(RFP_ORIGINAL_DIR_LEGACY, stored_name)
         stored_path_for_read = resolve_legacy_path(stored_path, legacy_stored_path)
@@ -642,12 +749,17 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
                 preview_note = "Preview: Converted to PDF for preview only (original Word file preserved)."
                 text_source_path = pdf_path
             except Exception:
+                print(f"{rfp_prefix} ⚠️ Word preview conversion failed; LibreOffice may be missing")
                 return templates.TemplateResponse("rfp.html", {
                     "request": request,
-                    "active": "rfp",
+                    "active": "rfp_upload",
                     "result": None,
                     "extracted_text": extracted_text,
                     "extracted_text_truncated": extracted_text_truncated,
+                    "debug": debug_enabled,
+                    "extraction_time_ms": extraction_time_ms,
+                    "extracted_char_count": len(extracted_text),
+                    "file_type_detected": file_type_detected,
                     "file_name": original_name,
                     "file_url": file_url,
                     "file_ext": ext,
@@ -656,40 +768,102 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
                     "error": "Word preview conversion failed. Please verify LibreOffice is installed."
                 })
 
+        manifest_path = ""
         try:
+            manifest_ms = 0.0
             try:
-                docling_result = extract_with_docling(stored_path_for_read)
-                extracted_text = (docling_result.get("text") or "").strip()
-                artifacts_dir = docling_result.get("artifacts_dir")
-                pages = docling_result.get("pages") or []
-                pages_count = len(pages) if isinstance(pages, list) else 0
-                print(
-                    f"RFP extract: docling (text_len={len(extracted_text)}, pages_count={pages_count}, artifacts_dir={artifacts_dir})"
-                )
+                from app.services.rfp_pipeline import run_extraction_pipeline
+
+                extract_start = time.perf_counter()
+                print(f"{rfp_prefix} 🔍 Extraction started")
+                pipeline = run_extraction_pipeline(stored_path_for_read, ext, base_id)
+                extract_time_ms = (time.perf_counter() - extract_start) * 1000
+                extracted_text = pipeline["extraction"]["text"]
+
+                manifest_start = time.perf_counter()
+                os.makedirs(RFP_MANIFEST_DIR, exist_ok=True)
+                manifest_path = os.path.join(RFP_MANIFEST_DIR, f"{base_id}.json")
+                manifest = {
+                    "id": base_id,
+                    "file": original_name,
+                    "ext": ext,
+                    "mode": pipeline["mode"],
+                    "length": len(extracted_text),
+                    "quality_gate": pipeline["quality_gate"],
+                    "fallback_used": pipeline["fallback_used"],
+                    "fallback_pdf_path": pipeline["fallback_pdf_path"],
+                }
+
+                with open(manifest_path, "w", encoding="utf-8") as f:
+                    json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+                print(f"{rfp_prefix} Manifest Saved: {manifest_path}")
+                manifest_ms = (time.perf_counter() - manifest_start) * 1000
             except Exception as exc:
-                print(f"RFP extract: docling failed ({exc}); falling back")
+                print(f"{rfp_prefix} RFP extract: docling failed ({exc}); falling back")
                 if ext in {"doc", "docx"}:
+                    print(f"{rfp_prefix} 🔍 Extraction started")
+                    extract_start = time.perf_counter()
                     extracted_text = extract_text_from_word(stored_path)
-                    print(f"RFP extract: word (len={len(extracted_text)})")
+                    extract_time_ms = (time.perf_counter() - extract_start) * 1000
+                    print(f"{rfp_prefix} RFP extract: word (len={len(extracted_text)})")
                 else:
+                    print(f"{rfp_prefix} 🔍 Extraction started")
+                    extract_start = time.perf_counter()
                     extracted_text = extract_pdf_text(text_source_path)
-                    print(f"RFP extract: pypdf2 (len={len(extracted_text)})")
-            extracted_raw_dir = RFP_EXTRACTED_RAW_DIR
-            os.makedirs(extracted_raw_dir, exist_ok=True)
-            extracted_raw_path = os.path.join(extracted_raw_dir, f"{base_id}.txt")
-            with open(extracted_raw_path, "w", encoding="utf-8") as f:
-                f.write(extracted_text)
-            print(f"RFP extract: saved extracted_raw -> {extracted_raw_path}")
-            if len(extracted_text) > 50000:
-                extracted_text = extracted_text[:50000]
-                extracted_text_truncated = True
+                    extract_time_ms = (time.perf_counter() - extract_start) * 1000
+                    print(f"{rfp_prefix} RFP extract: pypdf2 (len={len(extracted_text)})")
+            extraction_time_ms = round(extract_time_ms, 2) if extract_time_ms is not None else None
+            if extract_time_ms is not None:
+                print(f"{rfp_prefix} STAGE docling_extract ms={extract_time_ms:.2f} ({format_duration(extract_time_ms)})")
+            print(f"{rfp_prefix} ✅ Extraction done")
+            print(f"{rfp_prefix} STAGE manifest_write ms={manifest_ms:.2f} ({format_duration(manifest_ms)})")
+            image_placeholders = extracted_text.count(IMAGE_PLACEHOLDER_TOKEN)
+            per_1000 = 0.0
+            if extracted_text:
+                per_1000 = image_placeholders / (len(extracted_text) / 1000)
+            print(
+                f"{rfp_prefix} EXTRACT text_len={len(extracted_text)} "
+                f"image_placeholders={image_placeholders} per_1000={per_1000:.2f}"
+            )
+            extraction_metrics = {
+                "file_size_bytes": file_size_bytes,
+                "file_ext": ext,
+                "extract_time_ms": extraction_time_ms,
+                "extracted_chars": len(extracted_text),
+                "extracted_words": len(extracted_text.split()) if extracted_text else 0,
+            }
+            from app.services.rfp_saver import save_extracted_text
+
+            save_start = time.perf_counter()
+            save_result = save_extracted_text(base_id, extracted_text)
+            save_ms = (time.perf_counter() - save_start) * 1000
+            print(f"{rfp_prefix} STAGE save_extracted ms={save_ms:.2f} ({format_duration(save_ms)})")
+            total_ms = (time.perf_counter() - total_start) * 1000
+            print(f"{rfp_prefix} STAGE total_request ms={total_ms:.2f} ({format_duration(total_ms)})")
+            chars_per_sec = 0.0
+            if total_ms > 0:
+                chars_per_sec = len(extracted_text) / (total_ms / 1000)
+            print(
+                f"{rfp_prefix} 🏁 DONE ✅ total={format_duration(total_ms)} | "
+                f"text={len(extracted_text):,} chars | placeholders={image_placeholders} | "
+                f"rate={chars_per_sec:,.0f} chars/s | ext={ext}"
+            )
+            print(
+                f"{rfp_prefix} manifest={manifest_path} md={save_result['md_path']} txt={save_result['txt_path']}"
+            )
         except Exception as exc:
             return templates.TemplateResponse("rfp.html", {
                 "request": request,
-                "active": "rfp",
+                "active": "rfp_upload",
                 "result": None,
                 "extracted_text": extracted_text,
                 "extracted_text_truncated": extracted_text_truncated,
+                "extraction_metrics": extraction_metrics,
+                "debug": debug_enabled,
+                "extraction_time_ms": extraction_time_ms,
+                "extracted_char_count": len(extracted_text),
+                "file_type_detected": file_type_detected,
                 "file_name": original_name,
                 "file_url": file_url,
                 "file_ext": ext,
@@ -698,29 +872,17 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
                 "error": f"Failed to extract text from document: {exc}"
             })
 
-        extracted_dir = RFP_EXTRACTED_MD_DIR
-        os.makedirs(extracted_dir, exist_ok=True)
-        extracted_path = os.path.join(extracted_dir, f"{base_id}.md")
-        with open(extracted_path, "w", encoding="utf-8") as f:
-            f.write(extracted_text)
-        print(f"RFP extract: saved extracted_text -> {extracted_path}")
-
-        print("🧠 Sending extracted text to model...")
-        raw_result = call_local_rfp_model(extracted_text)
-        print("✔ Model returned response successfully")
-        raw_dir = RFP_MODEL_RAW_DIR
-        os.makedirs(raw_dir, exist_ok=True)
-        raw_path = os.path.join(raw_dir, f"{base_id}.txt")
-        with open(raw_path, "w", encoding="utf-8") as f:
-            f.write(str(raw_result))
-        print(f"RFP extract: saved model raw -> {raw_path}")
-        result = normalize_rfp_result(raw_result)
         return templates.TemplateResponse("rfp.html", {
             "request": request,
-            "active": "rfp",
-            "result": result,
+            "active": "rfp_upload",
+            "result": None,
             "extracted_text": extracted_text,
             "extracted_text_truncated": extracted_text_truncated,
+            "extraction_metrics": extraction_metrics,
+            "debug": debug_enabled,
+            "extraction_time_ms": extraction_time_ms,
+            "extracted_char_count": len(extracted_text),
+            "file_type_detected": file_type_detected,
             "file_name": original_name,
             "file_url": file_url,
             "file_ext": ext,
@@ -730,16 +892,17 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
         })
 
     if rfp_text:
-        print("📝 Using manual text analysis — no file uploaded")
-        raw_result = call_local_rfp_model(rfp_text)
-        print("✔ Model returned response successfully")
-        result = normalize_rfp_result(raw_result)
         return templates.TemplateResponse("rfp.html", {
             "request": request,
-            "active": "rfp",
-            "result": result,
-            "extracted_text": extracted_text,
-            "extracted_text_truncated": extracted_text_truncated,
+            "active": "rfp_upload",
+            "result": None,
+            "extracted_text": rfp_text,
+            "extracted_text_truncated": False,
+            "extraction_metrics": extraction_metrics,
+            "debug": debug_enabled,
+            "extraction_time_ms": extraction_time_ms,
+            "extracted_char_count": len(rfp_text),
+            "file_type_detected": file_type_detected,
             "file_name": None,
             "file_url": None,
             "file_ext": None,
@@ -750,68 +913,39 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
 
     return templates.TemplateResponse("rfp.html", {
         "request": request,
-        "active": "rfp",
+        "active": "rfp_upload",
         "result": None,
         "extracted_text": "",
         "extracted_text_truncated": False,
+        "extraction_metrics": extraction_metrics,
+        "debug": debug_enabled,
+        "extraction_time_ms": extraction_time_ms,
+        "extracted_char_count": 0,
+        "file_type_detected": file_type_detected,
         "file_name": None,
         "file_url": None,
         "file_ext": None,
         "preview_url": None,
         "preview_note": None,
-        "error": "No input provided. Please upload a file or paste text to analyze."
+        "error": "No input provided. Please upload a file or paste text to extract."
     })
-def format_rfp_section(value):
-    if isinstance(value, list):
-        return "; ".join(str(item) for item in value if item is not None)
-    return value
-
-def normalize_rfp_result(data):
-    requirements = (
-        data.get("requirements")
-        or data.get("requirements_checklist")
-        or data.get("requirements_grouped")
-    )
-    if isinstance(requirements, dict):
-        company = requirements.get("company")
-        team = requirements.get("team")
-        technical = requirements.get("technical")
-        financial = requirements.get("financial")
-        submission = requirements.get("submission")
-        deliverables = requirements.get("deliverables")
-        evaluation = requirements.get("evaluation")
-    else:
-        company = data.get("company_requirements")
-        team = data.get("team_requirements")
-        technical = data.get("technical_requirements")
-        financial = data.get("financial_requirements")
-        submission = data.get("submission_requirements")
-        deliverables = data.get("deliverables_timeline")
-        evaluation = data.get("evaluation_criteria")
-
-    return {
-        "summary": format_rfp_section(data.get("summary")),
-        "company_requirements": format_rfp_section(company),
-        "team_requirements": format_rfp_section(team),
-        "technical_requirements": format_rfp_section(technical),
-        "financial_requirements": format_rfp_section(financial),
-        "submission_requirements": format_rfp_section(submission),
-        "deliverables_timeline": format_rfp_section(deliverables),
-        "evaluation_criteria": format_rfp_section(evaluation),
-        "risks": format_rfp_section(data.get("risks_red_flags") or data.get("risks")),
-        "questions_for_client": format_rfp_section(data.get("questions_for_client")),
-        "missing_information": format_rfp_section(data.get("missing_information")),
-    }
 
 @app.post("/rfp/analyze-text", response_class=HTMLResponse)
 async def rfp_analyze_text(request: Request):
     form = await request.form()
     rfp_text = (form.get("rfp_text") or "").strip()
+    model_name = (form.get("model_name") or DEFAULT_MODEL).strip()
+    if model_name not in AVAILABLE_MODELS:
+        model_name = DEFAULT_MODEL
     if not rfp_text:
         return templates.TemplateResponse("rfp.html", {
             "request": request,
             "active": "rfp",
             "result": None,
+            "extracted_text": "",
+            "extracted_text_truncated": False,
+            "available_models": AVAILABLE_MODELS,
+            "selected_model": model_name,
             "file_name": None,
             "file_url": None,
             "file_ext": None,
@@ -820,12 +954,18 @@ async def rfp_analyze_text(request: Request):
             "error": "Please paste some RFP text before analyzing."
         })
 
-    raw_result = call_local_rfp_model(rfp_text)
-    result = normalize_rfp_result(raw_result)
+    from app.services.rfp_model_runner import run_rfp_model
+
+    model_result = run_rfp_model(rfp_text, model_name=model_name)
+    result = normalize_rfp_result(model_result)
     return templates.TemplateResponse("rfp.html", {
         "request": request,
         "active": "rfp",
         "result": result,
+        "extracted_text": rfp_text,
+        "extracted_text_truncated": False,
+        "available_models": AVAILABLE_MODELS,
+        "selected_model": model_name,
         "file_name": None,
         "file_url": None,
         "file_ext": None,
