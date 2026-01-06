@@ -852,7 +852,7 @@ async def rfp_preview(file: UploadFile = File(...)):
 
 @app.post("/rfp/upload", response_class=HTMLResponse)
 async def rfp_upload(request: Request, file: UploadFile = File(None)):
-    print("📥 RFP upload route triggered")
+    print("RFP upload route triggered")
     debug_enabled = request.query_params.get("debug") == "1"
     form = await request.form()
     rfp_text = (form.get("rfp_text") or "").strip()
@@ -872,11 +872,11 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
         start_time = datetime.fromtimestamp(process.create_time()).isoformat()
         logger.info("%s pid=%s ppid=%s start_time=%s", rfp_prefix, pid, ppid, start_time)
         total_start = time.perf_counter()
-        print(f"{rfp_prefix} 📄 File uploaded: {file.filename}")
+        print(f"{rfp_prefix} File uploaded: {file.filename}")
         original_name = file.filename or ""
         ext = os.path.splitext(original_name)[1].lower().lstrip(".")
         file_type_detected = ext
-        print(f"{rfp_prefix} 📄 File type: {ext}")
+        print(f"{rfp_prefix} File type: {ext}")
         from app.services.rfp_config import IMAGE_PLACEHOLDER_TOKEN, RFP_MANIFEST_DIR
         if ext not in {"pdf", "doc", "docx"}:
             return templates.TemplateResponse("rfp.html", {
@@ -908,7 +908,7 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
         with open(stored_path, "wb") as f:
             f.write(file_bytes)
         upload_ms = (time.perf_counter() - upload_start) * 1000
-        print(f"{rfp_prefix} 💾 File saved")
+        print(f"{rfp_prefix} File saved")
         print(f"{rfp_prefix} STAGE upload_save ms={upload_ms:.2f} ({format_duration(upload_ms)})")
 
         legacy_stored_path = os.path.join(RFP_ORIGINAL_DIR_LEGACY, stored_name)
@@ -924,7 +924,7 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
                 preview_note = "Preview: Converted to PDF for preview only (original Word file preserved)."
                 text_source_path = pdf_path
             except Exception:
-                print(f"{rfp_prefix} ⚠️ Word preview conversion failed; LibreOffice may be missing")
+                print(f"{rfp_prefix} Word preview conversion failed; LibreOffice may be missing")
                 return templates.TemplateResponse("rfp.html", {
                     "request": request,
                     "active": "rfp_upload",
@@ -971,7 +971,7 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
                     )
 
                 extract_start = time.perf_counter()
-                print(f"{rfp_prefix} 🔍 Extraction started")
+                print(f"{rfp_prefix} Extraction started")
                 pipeline = run_extraction_pipeline(stored_path_for_read, ext, base_id)
                 extract_time_ms = (time.perf_counter() - extract_start) * 1000
                 extracted_text = pipeline["extraction"]["text"]
@@ -1000,13 +1000,13 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
             except Exception as exc:
                 print(f"{rfp_prefix} RFP extract: docling failed ({exc}); falling back")
                 if ext in {"doc", "docx"}:
-                    print(f"{rfp_prefix} 🔍 Extraction started")
+                    print(f"{rfp_prefix} Extraction started")
                     extract_start = time.perf_counter()
                     extracted_text = extract_text_from_word(stored_path)
                     extract_time_ms = (time.perf_counter() - extract_start) * 1000
                     print(f"{rfp_prefix} RFP extract: word (len={len(extracted_text)})")
                 else:
-                    print(f"{rfp_prefix} 🔍 Extraction started")
+                    print(f"{rfp_prefix} Extraction started")
                     extract_start = time.perf_counter()
                     extracted_text = extract_pdf_text(text_source_path)
                     extract_time_ms = (time.perf_counter() - extract_start) * 1000
@@ -1014,7 +1014,7 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
             extraction_time_ms = round(extract_time_ms, 2) if extract_time_ms is not None else None
             if extract_time_ms is not None:
                 print(f"{rfp_prefix} STAGE docling_extract ms={extract_time_ms:.2f} ({format_duration(extract_time_ms)})")
-            print(f"{rfp_prefix} ✅ Extraction done")
+            print(f"{rfp_prefix} Extraction done")
             print(f"{rfp_prefix} STAGE manifest_write ms={manifest_ms:.2f} ({format_duration(manifest_ms)})")
             image_placeholders = extracted_text.count(IMAGE_PLACEHOLDER_TOKEN)
             per_1000 = 0.0
@@ -1045,7 +1045,7 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
             if total_ms > 0:
                 chars_per_sec = len(extracted_text) / (total_ms / 1000)
             print(
-                f"{rfp_prefix} 🏁 DONE ✅ total={format_duration(total_ms)} | "
+                f"{rfp_prefix} DONE total={format_duration(total_ms)} | "
                 f"text={len(extracted_text):,} chars | placeholders={image_placeholders} | "
                 f"rate={chars_per_sec:,.0f} chars/s | ext={ext}"
             )
