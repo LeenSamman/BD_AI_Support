@@ -1,4 +1,5 @@
 import json
+import re
 import requests
 from app.services.rfp_chunking import chunk_text
 from app.services.local_llm import get_chat_completions_url, get_default_model_name
@@ -6,6 +7,47 @@ from app.services.local_llm import get_chat_completions_url, get_default_model_n
 CHAT_COMPLETIONS_URL = get_chat_completions_url()
 DEFAULT_MODEL_NAME = get_default_model_name()
 TEMPERATURE = 0.3
+RFP_JSON_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "Title": {"type": "string"},
+        "Issuing_organization": {"type": "string"},
+        "summary": {"type": "string"},
+        "company_requirements": {"type": "array", "items": {"type": "string"}},
+        "team_requirements": {"type": "array", "items": {"type": "string"}},
+        "technical_requirements": {"type": "array", "items": {"type": "string"}},
+        "financial_requirements": {"type": "array", "items": {"type": "string"}},
+        "submission_requirements": {"type": "array", "items": {"type": "string"}},
+        "deliverables_timeline": {"type": "array", "items": {"type": "string"}},
+        "evaluation_criteria": {"type": "array", "items": {"type": "string"}},
+        "risks_red_flags": {"type": "array", "items": {"type": "string"}},
+        "questions_for_client": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": [
+        "Title",
+        "Issuing_organization",
+        "summary",
+        "company_requirements",
+        "team_requirements",
+        "technical_requirements",
+        "financial_requirements",
+        "submission_requirements",
+        "deliverables_timeline",
+        "evaluation_criteria",
+        "risks_red_flags",
+        "questions_for_client",
+    ],
+}
+
+JSON_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "rfp_extraction",
+        "schema": RFP_JSON_SCHEMA,
+    },
+}
+ALLOW_MODEL_FALLBACK = True
 
 STRING_KEYS = [
     "Title",
@@ -166,6 +208,8 @@ def extract_json_object(raw_text: str, chunk_index: int) -> dict:
     if not raw_text:
         return {}
     cleaned = raw_text.strip()
+    if "<think" in cleaned:
+        cleaned = re.sub(r"<think\b[^>]*>.*?</think>", "", cleaned, flags=re.DOTALL | re.IGNORECASE).strip()
     if cleaned.startswith("```json"):
         cleaned = cleaned[7:]
     elif cleaned.startswith("```"):
@@ -211,6 +255,7 @@ def _call_model_for_chunk(
     system_prompt = (
     "You are an information extraction engine for RFP/ToR documents.\n"
     "Return STRICT JSON ONLY using double quotes.\n"
+    "Do NOT include <think> tags or any hidden reasoning.\n"
     "\n"
     "ABSOLUTE OUTPUT CONSTRAINTS (HARD):\n"
     "A) Output MUST start with { and end with }.\n"
@@ -242,8 +287,15 @@ def _call_model_for_chunk(
     "4) If Title/Issuing_organization/summary are not clearly present in THIS chunk, keep them \"\".\n"
     "5) questions_for_client: include ONLY explicit questions asked by the RFP issuer (e.g., \"Questions must be sent to...\" is NOT a question).\n"
     "6) Do not include duplicates within the same array.\n"
+
     )
 
+    hard_system_prompt = (
+        system_prompt
+        + "\nFINAL OUTPUT RULE:\n"
+        + "Return only the JSON object and nothing else.\n"
+        + "If you cannot comply, return the empty schema shown above.\n"
+    )
 
     user_prompt = (
         f"You are processing CHUNK {chunk_index}/{chunk_total}.\n"
@@ -257,36 +309,77 @@ def _call_model_for_chunk(
         f"{rfp_text}"
     )
 
+    def _build_payload(prompt: str, force_json: bool, model_override: str) -> dict:
+        payload = {
+            "model": model_override,
+            "temperature": 0.1,
+            "max_tokens": 1200,
+            "messages": [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        if force_json:
+            payload["response_format"] = JSON_RESPONSE_FORMAT
+        return payload
 
-    payload = {
-        "model": model_name,
-        "temperature": 0.1,
-        "max_tokens": 1200,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    }
+    def _post_payload(payload: dict) -> dict | None:
+        try:
+            response = requests.post(CHAT_COMPLETIONS_URL, json=payload, timeout=180)
+        except Exception as exc:
+            print(f"RFP model: chunk {chunk_index} request failed ({exc})")
+            return None
 
-    try:
-        response = requests.post(CHAT_COMPLETIONS_URL, json=payload, timeout=180)
-    except Exception as exc:
-        print(f"RFP model: chunk {chunk_index} request failed ({exc})")
-        return {}
+        if response.status_code != 200:
+            error_detail = response.text
+            print(f"RFP model: chunk {chunk_index} failed ({response.status_code} {error_detail})")
+            return None
 
-    if response.status_code != 200:
-        error_detail = response.text
-        print(f"RFP model: chunk {chunk_index} failed ({response.status_code} {error_detail})")
-        return {}
+        try:
+            return response.json()
+        except ValueError as exc:
+            print(f"RFP model: chunk {chunk_index} invalid json response ({exc})")
+            return None
 
-    raw_text = response.json()["choices"][0]["message"]["content"]
+    def _call_once(prompt: str, label: str, model_override: str) -> dict:
+        response_json = _post_payload(_build_payload(prompt, force_json=True, model_override=model_override))
+        if response_json is None:
+            response_json = _post_payload(_build_payload(prompt, force_json=False, model_override=model_override))
+        if response_json is None:
+            return {}
 
-    print("\n" + "=" * 30 + f" RAW OUTPUT CHUNK {chunk_index} " + "=" * 30)
-    print(raw_text)
-    print("=" * 80 + "\n")
+        choices = response_json.get("choices")
+        if not choices:
+            print(f"RFP model: chunk {chunk_index} missing choices in response")
+            return {}
+        raw_text = choices[0]["message"]["content"]
 
-    parsed = extract_json_object(raw_text, chunk_index)
-    return parsed
+        print("\n" + "=" * 30 + f" RAW OUTPUT CHUNK {chunk_index} {label} " + "=" * 30)
+        print(raw_text)
+        print("=" * 80 + "\n")
+
+        return extract_json_object(raw_text, chunk_index)
+
+    parsed = _call_once(system_prompt, "PRIMARY", model_name)
+    if parsed:
+        return parsed
+    parsed = _call_once(hard_system_prompt, "RETRY", model_name)
+    if parsed:
+        return parsed
+
+    if ALLOW_MODEL_FALLBACK and model_name != DEFAULT_MODEL_NAME:
+        print(
+            "RFP model: chunk {i} retrying with fallback model={m}".format(
+                i=chunk_index,
+                m=DEFAULT_MODEL_NAME,
+            )
+        )
+        parsed = _call_once(system_prompt, "FALLBACK PRIMARY", DEFAULT_MODEL_NAME)
+        if parsed:
+            return parsed
+        return _call_once(hard_system_prompt, "FALLBACK RETRY", DEFAULT_MODEL_NAME)
+
+    return {}
 
 
 
