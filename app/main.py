@@ -19,6 +19,7 @@ import psutil
 import sys
 from app.services.pdf_extract import extract_pdf_text
 from app.services.word_extract import extract_text_from_word
+from app.services.local_llm import fetch_local_models, get_default_model_name
 
 app = FastAPI(title="Staffing Admin")
 
@@ -78,8 +79,14 @@ RFP_EXTRACTED_RAW_DIR = os.path.join("uploads", "rfp_extracted_txt")
 RFP_MODEL_RAW_DIR = os.path.join("uploads", "rfp_model_raw_response")
 RFP_MODEL_RAW_DIR_LEGACY = os.path.join("uploads", "rfp_model_raw")
 
-AVAILABLE_MODELS = ["qwen2.5-vl-7b-instruct"]
-DEFAULT_MODEL = "qwen2.5-vl-7b-instruct"
+def get_available_models() -> list[str]:
+    return fetch_local_models()
+
+
+def select_default_model(available_models: list[str]) -> str:
+    if available_models:
+        return available_models[0]
+    return get_default_model_name()
 
 MAX_EXTRACTIONS = os.getenv("MAX_EXTRACTIONS")
 _extraction_semaphore = None
@@ -573,14 +580,16 @@ async def dashboard(request: Request):
 
 @app.get("/rfp", response_class=HTMLResponse)
 async def rfp_get(request: Request):
+    available_models = get_available_models()
+    selected_model = select_default_model(available_models)
     return templates.TemplateResponse("rfp.html", {
         "request": request,
         "active": "rfp_upload",
         "result": None,
         "extracted_text": "",
         "extracted_text_truncated": False,
-        "available_models": AVAILABLE_MODELS,
-        "selected_model": DEFAULT_MODEL,
+        "available_models": available_models,
+        "selected_model": selected_model,
         "file_name": None,
         "file_url": None,
         "file_ext": None,
@@ -591,13 +600,14 @@ async def rfp_get(request: Request):
 
 @app.get("/rfp/text", response_class=HTMLResponse)
 async def rfp_text_get(request: Request):
-    selected_model = AVAILABLE_MODELS[0] if AVAILABLE_MODELS else ""
+    available_models = get_available_models()
+    selected_model = select_default_model(available_models)
     return templates.TemplateResponse("rfp_text.html", {
         "request": request,
         "active": "rfp_text",
         "result": None,
         "rfp_text": "",
-        "available_models": AVAILABLE_MODELS,
+        "available_models": available_models,
         "selected_model": selected_model,
         "error": None
     })
@@ -607,8 +617,28 @@ async def rfp_text_post(request: Request):
     form = await request.form()
     rfp_text = (form.get("rfp_text") or "").strip()
     model_name = (form.get("model_name") or "").strip()
-    if model_name not in AVAILABLE_MODELS:
-        model_name = AVAILABLE_MODELS[0] if AVAILABLE_MODELS else ""
+    available_models = get_available_models()
+    if available_models:
+        if model_name not in available_models:
+            model_name = available_models[0]
+    elif not model_name:
+        model_name = get_default_model_name()
+    if not model_name:
+        return templates.TemplateResponse("rfp_text.html", {
+            "request": request,
+            "active": "rfp_text",
+            "result": None,
+            "rfp_text": rfp_text,
+            "available_models": available_models,
+            "selected_model": "",
+            "llm_metrics": {
+                "input_chars": len(rfp_text),
+                "input_words": len(rfp_text.split()) if rfp_text else 0,
+                "model_name": "",
+                "llm_time_ms": None,
+            },
+            "error": "No local models detected. Start LM Studio (or your local server) and refresh."
+        })
     # TEMP DEBUG START
     print(
         f"TEMP DEBUG rfp_text_post: received model={model_name} text_len={len(rfp_text)}"
@@ -627,7 +657,7 @@ async def rfp_text_post(request: Request):
             "active": "rfp_text",
             "result": None,
             "rfp_text": "",
-            "available_models": AVAILABLE_MODELS,
+            "available_models": available_models,
             "selected_model": model_name,
             "llm_metrics": llm_metrics,
             "error": "Please paste extracted RFP text before analyzing."
@@ -685,7 +715,7 @@ async def rfp_text_post(request: Request):
         "active": "rfp_text",
         "result": result,
         "rfp_text": rfp_text,
-        "available_models": AVAILABLE_MODELS,
+        "available_models": available_models,
         "selected_model": model_name,
         "llm_metrics": llm_metrics,
         "error": None

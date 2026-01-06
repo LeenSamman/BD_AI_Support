@@ -33,10 +33,14 @@
 
       <div>
         <label class="text-sm font-semibold text-slate-800">Model</label>
-        <select name="model_name" class="mt-2 w-full p-3 border rounded-lg text-sm">
-          {% for model in available_models %}
-            <option value="{{ model }}"{% if model == selected_model %} selected{% endif %}>{{ model }}</option>
-          {% endfor %}
+        <select name="model_name" class="mt-2 w-full p-3 border rounded-lg text-sm"{% if not available_models %} disabled{% endif %}>
+          {% if available_models %}
+            {% for model in available_models %}
+              <option value="{{ model }}"{% if model == selected_model %} selected{% endif %}>{{ model }}</option>
+            {% endfor %}
+          {% else %}
+            <option value="">No models detected. Start LM Studio and refresh.</option>
+          {% endif %}
         </select>
       </div>
 

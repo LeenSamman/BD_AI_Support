@@ -1,10 +1,10 @@
 import json
 import requests
 from app.services.rfp_chunking import chunk_text
+from app.services.local_llm import get_chat_completions_url, get_default_model_name
 
-BASE_URL = "http://localhost:1234/v1/chat/completions"
-MODEL_NAME = "qwen2.5-vl-7b-instruct"
-ALLOWED_MODELS = ["qwen2.5-vl-7b-instruct"]
+CHAT_COMPLETIONS_URL = get_chat_completions_url()
+DEFAULT_MODEL_NAME = get_default_model_name()
 TEMPERATURE = 0.3
 
 STRING_KEYS = [
@@ -188,9 +188,9 @@ def extract_json_object(raw_text: str, chunk_index: int) -> dict:
 
 
 def _resolve_model_name(model_name: str | None) -> str:
-    if model_name in ALLOWED_MODELS:
-        return model_name
-    return MODEL_NAME
+    if model_name and model_name.strip():
+        return model_name.strip()
+    return DEFAULT_MODEL_NAME
 
 
 def _call_model_for_chunk(
@@ -269,7 +269,7 @@ def _call_model_for_chunk(
     }
 
     try:
-        response = requests.post(BASE_URL, json=payload, timeout=180)
+        response = requests.post(CHAT_COMPLETIONS_URL, json=payload, timeout=180)
     except Exception as exc:
         print(f"RFP model: chunk {chunk_index} request failed ({exc})")
         return {}
