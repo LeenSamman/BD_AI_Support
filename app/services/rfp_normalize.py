@@ -127,22 +127,6 @@ def _normalize_questions(items: object) -> List[dict]:
     return _dedupe(normalized, lambda x: x.get("question", "").lower())
 
 
-def _normalize_missing(items: object) -> List[dict]:
-    if not isinstance(items, list):
-        return []
-    normalized: List[dict] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        normalized_item = {
-            "item": _clean_str(item.get("item", "")),
-            "why_missing": _clean_str(item.get("why_missing", "")),
-        }
-        normalized.append(normalized_item)
-    normalized = _drop_empty_items(normalized)
-    return _dedupe(normalized, lambda x: x.get("item", "").lower())
-
-
 def ensure_schema(data: dict) -> Dict[str, object]:
     source = data if isinstance(data, dict) else {}
     summary = _single_paragraph(_clean_str(source.get("summary_paragraph", "")))
@@ -184,7 +168,6 @@ def ensure_schema(data: dict) -> Dict[str, object]:
             "risks_red_flags": _normalize_checklist(requirements.get("risks_red_flags", []), use_risk_key=True),
         },
         "questions_for_client": _normalize_questions(source.get("questions_for_client", [])),
-        "missing_information": _normalize_missing(source.get("missing_information", [])),
     }
     return normalized
 

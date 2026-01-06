@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+import asyncio
 import sqlite3
 import os
 import csv
@@ -12,9 +13,12 @@ import subprocess
 import logging
 from datetime import datetime
 import time
+
+from app.services.mem_debug import log_mem, mem_mb
+import psutil
+import sys
 from app.services.pdf_extract import extract_pdf_text
 from app.services.word_extract import extract_text_from_word
-from app.services.rfp_normalize import normalize_rfp_result
 
 app = FastAPI(title="Staffing Admin")
 
@@ -28,6 +32,44 @@ app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "DB", "staffing.db")
 
+@app.on_event("startup")
+async def log_startup_info():
+    pid = os.getpid()
+    ppid = os.getppid()
+    process = psutil.Process(pid)
+    start_time = datetime.fromtimestamp(process.create_time()).isoformat()
+    workers_env = os.getenv("UVICORN_WORKERS") or os.getenv("WEB_CONCURRENCY") or os.getenv("WORKERS")
+    reload_env = os.getenv("UVICORN_RELOAD") or os.getenv("RELOAD")
+    logging.getLogger("startup").info(
+        "startup pid=%s ppid=%s start_time=%s workers_env=%s",
+        pid,
+        ppid,
+        start_time,
+        workers_env or "unknown",
+    )
+    heavy_modules = ["docling", "rapidocr", "rapidocr_onnxruntime", "torch", "pypdfium2", "fitz"]
+    loaded = [name for name in heavy_modules if name in sys.modules]
+    if loaded:
+        logging.getLogger("startup").warning(
+            "heavy modules loaded in server process at startup: %s",
+            ",".join(loaded),
+        )
+    else:
+        logging.getLogger("startup").info("no heavy modules loaded in server process at startup")
+    if reload_env and str(reload_env).lower() in {"1", "true", "yes"}:
+        logging.getLogger("startup").warning("uvicorn reload appears enabled; disable for memory testing")
+    if workers_env:
+        try:
+            if int(workers_env) > 1:
+                logging.getLogger("startup").warning(
+                    "uvicorn workers > 1; Docling memory usage multiplies per worker"
+                )
+        except ValueError:
+            pass
+    logging.getLogger("startup").info(
+        "note: running uvicorn with --workers > 1 multiplies Docling memory usage"
+    )
+
 RFP_ORIGINAL_DIR = os.path.join("uploads", "rfp_original_uploaded")
 RFP_ORIGINAL_DIR_LEGACY = os.path.join("uploads", "rfp")
 RFP_EXTRACTED_MD_DIR = os.path.join("uploads", "rfp_extracted_md")
@@ -38,6 +80,16 @@ RFP_MODEL_RAW_DIR_LEGACY = os.path.join("uploads", "rfp_model_raw")
 
 AVAILABLE_MODELS = ["qwen2.5-vl-7b-instruct"]
 DEFAULT_MODEL = "qwen2.5-vl-7b-instruct"
+
+MAX_EXTRACTIONS = os.getenv("MAX_EXTRACTIONS")
+_extraction_semaphore = None
+if MAX_EXTRACTIONS:
+    try:
+        max_extractions = int(MAX_EXTRACTIONS)
+        if max_extractions > 0:
+            _extraction_semaphore = asyncio.Semaphore(max_extractions)
+    except ValueError:
+        _extraction_semaphore = None
 
 def format_duration(ms: float) -> str:
     if ms < 1:
@@ -557,6 +609,11 @@ async def rfp_text_post(request: Request):
     model_name = (form.get("model_name") or "").strip()
     if model_name not in AVAILABLE_MODELS:
         model_name = AVAILABLE_MODELS[0] if AVAILABLE_MODELS else ""
+    # TEMP DEBUG START
+    print(
+        f"TEMP DEBUG rfp_text_post: received model={model_name} text_len={len(rfp_text)}"
+    )
+    # TEMP DEBUG END
     llm_metrics = {
         "input_chars": len(rfp_text),
         "input_words": len(rfp_text.split()) if rfp_text else 0,
@@ -581,8 +638,49 @@ async def rfp_text_post(request: Request):
     llm_start = time.perf_counter()
     model_result = call_local_rfp_model(rfp_text, model_name=model_name)
     llm_metrics["llm_time_ms"] = round((time.perf_counter() - llm_start) * 1000, 2)
-    result = normalize_rfp_result(model_result)
-    return templates.TemplateResponse("rfp_text.html", {
+    result = model_result
+    # TEMP DEBUG START
+    result_type = type(result).__name__
+    result_keys = list(result.keys()) if isinstance(result, dict) else []
+    list_fields = [
+        "company_requirements",
+        "team_requirements",
+        "technical_requirements",
+        "financial_requirements",
+        "submission_requirements",
+        "deliverables_timeline",
+        "evaluation_criteria",
+        "risks_red_flags",
+        "questions_for_client",
+    ]
+    list_counts = {}
+    if isinstance(result, dict):
+        for field in list_fields:
+            value = result.get(field, [])
+            list_counts[field] = len(value) if isinstance(value, list) else "non-list"
+    json_len = len(json.dumps(result)) if isinstance(result, dict) else 0
+    print(
+        "TEMP DEBUG rfp_text_post: result_type={t} keys={k}".format(
+            t=result_type,
+            k=result_keys,
+        )
+    )
+    if isinstance(result, dict):
+        print(
+            "TEMP DEBUG rfp_text_post: sample Title={t} Issuing_organization={o} summary={s}".format(
+                t=result.get("Title", ""),
+                o=result.get("Issuing_organization", ""),
+                s=result.get("summary", ""),
+            )
+        )
+    print(
+        "TEMP DEBUG rfp_text_post: list_counts={c} json_len={l}".format(
+            c=list_counts,
+            l=json_len,
+        )
+    )
+    # TEMP DEBUG END
+    context = {
         "request": request,
         "active": "rfp_text",
         "result": result,
@@ -591,7 +689,48 @@ async def rfp_text_post(request: Request):
         "selected_model": model_name,
         "llm_metrics": llm_metrics,
         "error": None
-    })
+    }
+    # TEMP DEBUG START
+    expected_keys = [
+        "Title",
+        "Issuing_organization",
+        "summary",
+        "company_requirements",
+        "team_requirements",
+        "technical_requirements",
+        "financial_requirements",
+        "submission_requirements",
+        "deliverables_timeline",
+        "evaluation_criteria",
+        "risks_red_flags",
+        "questions_for_client",
+    ]
+    result_is_dict = isinstance(result, dict)
+    expected_present = []
+    if result_is_dict:
+        expected_present = [key for key in expected_keys if key in result]
+    print(
+        "TEMP DEBUG rfp_text_post: context_keys={k} result_is_dict={d} expected_present={e}".format(
+            k=list(context.keys()),
+            d=result_is_dict,
+            e=expected_present,
+        )
+    )
+    try:
+        html_preview = templates.get_template("rfp_text.html").render(context)
+        title_value = ""
+        if result_is_dict:
+            title_value = result.get("Title", "")
+        print(
+            "TEMP DEBUG rfp_text_post: html_len={l} title_in_html={t}".format(
+                l=len(html_preview),
+                t=str(title_value) in html_preview if title_value else False,
+            )
+        )
+    except Exception as exc:
+        print(f"TEMP DEBUG rfp_text_post: html_render_failed={exc}")
+    # TEMP DEBUG END
+    return templates.TemplateResponse("rfp_text.html", context)
 
 @app.get("/rfp/team", response_class=HTMLResponse)
 async def rfp_team_get(request: Request):
@@ -696,6 +835,12 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
     if file and file.filename:
         base_id = str(uuid.uuid4())
         rfp_prefix = f"[RFP:{base_id}]"
+        logger = logging.getLogger("rfp")
+        pid = os.getpid()
+        ppid = os.getppid()
+        process = psutil.Process(pid)
+        start_time = datetime.fromtimestamp(process.create_time()).isoformat()
+        logger.info("%s pid=%s ppid=%s start_time=%s", rfp_prefix, pid, ppid, start_time)
         total_start = time.perf_counter()
         print(f"{rfp_prefix} 📄 File uploaded: {file.filename}")
         original_name = file.filename or ""
@@ -769,16 +914,39 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
                 })
 
         manifest_path = ""
+        server_rss_before = None
+        server_rss_after_worker = None
+        server_rss_after_read = None
+        semaphore_acquired = False
+        if _extraction_semaphore:
+            await _extraction_semaphore.acquire()
+            semaphore_acquired = True
         try:
+            server_rss_before = mem_mb()
+            log_mem(f"{rfp_prefix} before_extraction")
             manifest_ms = 0.0
             try:
                 from app.services.rfp_pipeline import run_extraction_pipeline
+
+                heavy_loaded = [
+                    name
+                    for name in sys.modules
+                    if name.startswith("torch") or "docling" in name or "rapidocr" in name
+                ]
+                if heavy_loaded:
+                    logger.warning(
+                        "%s heavy modules detected in server process: %s",
+                        rfp_prefix,
+                        ",".join(heavy_loaded),
+                    )
 
                 extract_start = time.perf_counter()
                 print(f"{rfp_prefix} 🔍 Extraction started")
                 pipeline = run_extraction_pipeline(stored_path_for_read, ext, base_id)
                 extract_time_ms = (time.perf_counter() - extract_start) * 1000
                 extracted_text = pipeline["extraction"]["text"]
+                server_rss_after_worker = mem_mb()
+                log_mem(f"{rfp_prefix} after_worker")
 
                 manifest_start = time.perf_counter()
                 os.makedirs(RFP_MANIFEST_DIR, exist_ok=True)
@@ -839,6 +1007,8 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
             save_result = save_extracted_text(base_id, extracted_text)
             save_ms = (time.perf_counter() - save_start) * 1000
             print(f"{rfp_prefix} STAGE save_extracted ms={save_ms:.2f} ({format_duration(save_ms)})")
+            server_rss_after_read = mem_mb()
+            log_mem(f"{rfp_prefix} after_read")
             total_ms = (time.perf_counter() - total_start) * 1000
             print(f"{rfp_prefix} STAGE total_request ms={total_ms:.2f} ({format_duration(total_ms)})")
             chars_per_sec = 0.0
@@ -853,7 +1023,8 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
                 f"{rfp_prefix} manifest={manifest_path} md={save_result['md_path']} txt={save_result['txt_path']}"
             )
         except Exception as exc:
-            return templates.TemplateResponse("rfp.html", {
+            log_mem(f"{rfp_prefix} after_extraction_error")
+            response = templates.TemplateResponse("rfp.html", {
                 "request": request,
                 "active": "rfp_upload",
                 "result": None,
@@ -871,8 +1042,20 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
                 "preview_note": preview_note,
                 "error": f"Failed to extract text from document: {exc}"
             })
+            response.headers["X-Request-Id"] = base_id
+            if server_rss_before is not None:
+                response.headers["X-Server-RSS-Before"] = f"{server_rss_before:.2f}"
+            if server_rss_after_worker is not None:
+                response.headers["X-Server-RSS-After-Worker"] = f"{server_rss_after_worker:.2f}"
+            if server_rss_after_read is not None:
+                response.headers["X-Server-RSS-After-Read"] = f"{server_rss_after_read:.2f}"
+            return response
+        finally:
+            if semaphore_acquired:
+                _extraction_semaphore.release()
 
-        return templates.TemplateResponse("rfp.html", {
+        log_mem(f"{rfp_prefix} after_extraction")
+        response = templates.TemplateResponse("rfp.html", {
             "request": request,
             "active": "rfp_upload",
             "result": None,
@@ -890,6 +1073,14 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
             "preview_note": preview_note,
             "error": None
         })
+        response.headers["X-Request-Id"] = base_id
+        if server_rss_before is not None:
+            response.headers["X-Server-RSS-Before"] = f"{server_rss_before:.2f}"
+        if server_rss_after_worker is not None:
+            response.headers["X-Server-RSS-After-Worker"] = f"{server_rss_after_worker:.2f}"
+        if server_rss_after_read is not None:
+            response.headers["X-Server-RSS-After-Read"] = f"{server_rss_after_read:.2f}"
+        return response
 
     if rfp_text:
         return templates.TemplateResponse("rfp.html", {
@@ -928,50 +1119,6 @@ async def rfp_upload(request: Request, file: UploadFile = File(None)):
         "preview_url": None,
         "preview_note": None,
         "error": "No input provided. Please upload a file or paste text to extract."
-    })
-
-@app.post("/rfp/analyze-text", response_class=HTMLResponse)
-async def rfp_analyze_text(request: Request):
-    form = await request.form()
-    rfp_text = (form.get("rfp_text") or "").strip()
-    model_name = (form.get("model_name") or DEFAULT_MODEL).strip()
-    if model_name not in AVAILABLE_MODELS:
-        model_name = DEFAULT_MODEL
-    if not rfp_text:
-        return templates.TemplateResponse("rfp.html", {
-            "request": request,
-            "active": "rfp",
-            "result": None,
-            "extracted_text": "",
-            "extracted_text_truncated": False,
-            "available_models": AVAILABLE_MODELS,
-            "selected_model": model_name,
-            "file_name": None,
-            "file_url": None,
-            "file_ext": None,
-            "preview_url": None,
-            "preview_note": None,
-            "error": "Please paste some RFP text before analyzing."
-        })
-
-    from app.services.rfp_model_runner import run_rfp_model
-
-    model_result = run_rfp_model(rfp_text, model_name=model_name)
-    result = normalize_rfp_result(model_result)
-    return templates.TemplateResponse("rfp.html", {
-        "request": request,
-        "active": "rfp",
-        "result": result,
-        "extracted_text": rfp_text,
-        "extracted_text_truncated": False,
-        "available_models": AVAILABLE_MODELS,
-        "selected_model": model_name,
-        "file_name": None,
-        "file_url": None,
-        "file_ext": None,
-        "preview_url": None,
-        "preview_note": None,
-        "error": None
     })
 
 @app.get("/employees", response_class=HTMLResponse)
