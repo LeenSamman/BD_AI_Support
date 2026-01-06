@@ -1,8 +1,28 @@
 import json
 import re
 import requests
+import sys
 from app.services.rfp_chunking import chunk_text
 from app.services.local_llm import get_chat_completions_url, get_default_model_name
+
+
+def safe_print(text: str, file=sys.stdout) -> None:
+    """
+    Safely print text that may contain Unicode characters (e.g., emojis)
+    that can't be encoded with Windows cp1252 encoding.
+    """
+    try:
+        print(text, file=file)
+    except UnicodeEncodeError:
+        # Replace problematic characters with a placeholder or encode with errors='replace'
+        try:
+            # Try encoding with UTF-8 and errors='replace'
+            encoded = text.encode('utf-8', errors='replace').decode('utf-8')
+            print(encoded, file=file)
+        except Exception:
+            # Last resort: replace all non-ASCII characters
+            safe_text = text.encode('ascii', errors='replace').decode('ascii')
+            print(safe_text, file=file)
 
 CHAT_COMPLETIONS_URL = get_chat_completions_url()
 DEFAULT_MODEL_NAME = get_default_model_name()
@@ -355,7 +375,7 @@ def _call_model_for_chunk(
         raw_text = choices[0]["message"]["content"]
 
         print("\n" + "=" * 30 + f" RAW OUTPUT CHUNK {chunk_index} {label} " + "=" * 30)
-        print(raw_text)
+        safe_print(raw_text)
         print("=" * 80 + "\n")
 
         return extract_json_object(raw_text, chunk_index)
@@ -462,7 +482,7 @@ def debug_print_raw_llm_per_chunk(text: str, model_name: str | None = None) -> N
     for i, chunk in enumerate(chunks, start=1):
         print(f"\n[CHUNK {i}/{len(chunks)}] len={len(chunk)}")
         print("-" * 80)
-        print(chunk[:800])  # just show first 800 chars of the chunk
+        safe_print(chunk[:800])  # just show first 800 chars of the chunk
         print("\n[RAW MODEL OUTPUT]")
         print("-" * 80)
 

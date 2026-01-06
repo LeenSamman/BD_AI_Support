@@ -131,14 +131,25 @@
 
   <div class="flex items-center justify-between mb-3">
     <h2 class="text-lg font-semibold text-slate-800">Extracted Text</h2>
-    {% if extracted_text_truncated %}
-      <span class="text-xs text-slate-500">Showing first 50k chars</span>
-    {% endif %}
+    <div class="flex items-center gap-2">
+      {% if extracted_text_truncated %}
+        <span class="text-xs text-slate-500">Showing first 50k chars</span>
+      {% endif %}
+      {% if extracted_text %}
+        <button id="rfp-copy-text-btn" 
+                class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors">
+          <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+          </svg>
+          Copy
+        </button>
+      {% endif %}
+    </div>
   </div>
 
   {% if extracted_text %}
     <div class="max-h-[240px] overflow-y-auto">
-      <pre class="text-xs font-mono whitespace-pre-wrap">{{ extracted_text }}</pre>
+      <pre id="rfp-extracted-text-content" class="text-xs font-mono whitespace-pre-wrap">{{ extracted_text }}</pre>
     </div>
   {% else %}
     <p class="text-sm text-slate-500">Waiting for document...</p>
@@ -282,6 +293,72 @@
     loadingOverlay.classList.remove("flex");
   };
 
+  // Function to attach copy button listener
+  const attachCopyButtonListener = () => {
+    const copyTextBtn = document.getElementById("rfp-copy-text-btn");
+    if (copyTextBtn && !copyTextBtn.hasAttribute("data-listener-attached")) {
+      copyTextBtn.setAttribute("data-listener-attached", "true");
+      copyTextBtn.addEventListener("click", async () => {
+        const textContent = document.getElementById("rfp-extracted-text-content");
+        if (!textContent) {
+          return;
+        }
+        
+        try {
+          await navigator.clipboard.writeText(textContent.textContent);
+          // Show feedback
+          const originalText = copyTextBtn.innerHTML;
+          copyTextBtn.innerHTML = `
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            Copied!
+          `;
+          copyTextBtn.classList.remove("bg-slate-100", "hover:bg-slate-200");
+          copyTextBtn.classList.add("bg-green-100", "text-green-700");
+          
+          setTimeout(() => {
+            copyTextBtn.innerHTML = originalText;
+            copyTextBtn.classList.remove("bg-green-100", "text-green-700");
+            copyTextBtn.classList.add("bg-slate-100", "hover:bg-slate-200");
+          }, 2000);
+        } catch (err) {
+          console.error("Failed to copy text:", err);
+          // Fallback for older browsers
+          const textArea = document.createElement("textarea");
+          textArea.value = textContent.textContent;
+          textArea.style.position = "fixed";
+          textArea.style.opacity = "0";
+          document.body.appendChild(textArea);
+          textArea.select();
+          try {
+            document.execCommand("copy");
+            const originalText = copyTextBtn.innerHTML;
+            copyTextBtn.innerHTML = `
+              <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+              Copied!
+            `;
+            copyTextBtn.classList.remove("bg-slate-100", "hover:bg-slate-200");
+            copyTextBtn.classList.add("bg-green-100", "text-green-700");
+            setTimeout(() => {
+              copyTextBtn.innerHTML = originalText;
+              copyTextBtn.classList.remove("bg-green-100", "text-green-700");
+              copyTextBtn.classList.add("bg-slate-100", "hover:bg-slate-200");
+            }, 2000);
+          } catch (fallbackErr) {
+            console.error("Fallback copy failed:", fallbackErr);
+          }
+          document.body.removeChild(textArea);
+        }
+      });
+    }
+  };
+
+  // Attach listener on page load
+  attachCopyButtonListener();
+
   analyzeBtn.addEventListener("click", async (e) => {
     e.preventDefault();
     startLoader();
@@ -296,6 +373,8 @@
       const newExtracted = newDoc.getElementById("rfp-extracted-panel");
       if (currentExtracted && newExtracted) {
         currentExtracted.innerHTML = newExtracted.innerHTML;
+        // Re-attach copy button listener after content update
+        setTimeout(attachCopyButtonListener, 100);
       }
       const currentResults = document.getElementById("rfp-results-panel");
       const newResults = newDoc.getElementById("rfp-results-panel");
